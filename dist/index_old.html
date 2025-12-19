@@ -1,0 +1,981 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Breakup Diagram – Real-time Monitoring</title>
+
+  <!-- Firebase SDKs -->
+  <script defer src="/__/firebase/12.6.0/firebase-app-compat.js"></script>
+  <script defer src="/__/firebase/12.6.0/firebase-auth-compat.js"></script>
+  <script defer src="/__/firebase/12.6.0/firebase-database-compat.js"></script>
+  <script defer src="/__/firebase/12.6.0/firebase-firestore-compat.js"></script>
+  <script defer src="/__/firebase/12.6.0/firebase-functions-compat.js"></script>
+  <script defer src="/__/firebase/12.6.0/firebase-messaging-compat.js"></script>
+  <script defer src="/__/firebase/12.6.0/firebase-storage-compat.js"></script>
+  <script defer src="/__/firebase/12.6.0/firebase-analytics-compat.js"></script>
+  <script defer src="/__/firebase/12.6.0/firebase-remote-config-compat.js"></script>
+  <script defer src="/__/firebase/12.6.0/firebase-performance-compat.js"></script>
+  <script defer src="/__/firebase/init.js?useEmulator=true"></script>
+
+  <!-- D3.js -->
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 1.5rem;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+        Roboto, Helvetica, Arial, sans-serif;
+      background: #f4f6fb;
+      color: #222;
+    }
+
+    h1 {
+      margin-top: 0;
+      margin-bottom: 0.4rem;
+    }
+
+    .subtitle {
+      margin-bottom: 1.5rem;
+      font-size: 0.9rem;
+      color: #555;
+    }
+
+    .layout {
+      display: flex;
+      gap: 1.5rem;
+      align-items: flex-start;
+      flex-wrap: wrap;
+    }
+
+    form {
+      max-width: 360px;
+      width: 100%;
+      background: #fff;
+      border-radius: 0.75rem;
+      padding: 1rem 1.1rem 1.2rem;
+      box-shadow: 0 6px 18px rgba(15, 23, 42, 0.12);
+    }
+
+    form h2 {
+      font-size: 1rem;
+      margin: 0 0 0.6rem;
+    }
+
+    .field-group {
+      display: grid;
+      grid-template-columns: 1.4fr 1fr;
+      gap: 0.4rem 0.5rem;
+      font-size: 0.85rem;
+      margin-bottom: 0.75rem;
+      align-items: center;
+    }
+
+    .field-group label {
+      justify-self: flex-start;
+    }
+
+    input[type="number"],
+    select {
+      width: 100%;
+      font-size: 0.85rem;
+      padding: 0.25rem 0.35rem;
+      border-radius: 0.35rem;
+      border: 1px solid #d0d7e2;
+    }
+
+    button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.4rem 0.9rem;
+      border-radius: 999px;
+      border: none;
+      background: #2563eb;
+      color: #fff;
+      font-size: 0.85rem;
+      cursor: pointer;
+      margin-top: 0.3rem;
+    }
+
+    button:hover {
+      background: #1d4ed8;
+    }
+
+    .btn-secondary {
+      background: #6b7280;
+    }
+
+    .btn-secondary:hover {
+      background: #4b5563;
+    }
+
+    svg {
+      background: #ffffff;
+      border-radius: 0.75rem;
+      box-shadow: 0 6px 18px rgba(15, 23, 42, 0.12);
+      max-width: 100%;
+    }
+
+    #pointStatus {
+      font-size: 0.8rem;
+      color: #4b5563;
+      margin-top: 0.35rem;
+    }
+
+    @media (max-width: 900px) {
+      .layout {
+        flex-direction: column;
+      }
+
+      form {
+        max-width: 100%;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Breakup Diagram – Real-time Monitoring</h1>
+  <div class="subtitle">
+    Risk zones (green / yellow / red) are defined by control points (DJ, Q).
+    To adjust the shape, simply change these points in the river
+    configuration.
+  </div>
+
+  <div class="layout">
+    <form id="configForm">
+      <h2>River</h2>
+
+      <div class="field-group">
+        <label for="riverSelect">River</label>
+        <select id="riverSelect">
+          <option value="lassomption">L'Assomption River</option>
+          <option value="montmorency">Montmorency River</option>
+          <option value="steanne">Ste-Anne River</option>
+        </select>
+      </div>
+
+      <h2>Parameters (optional)</h2>
+
+      <div class="field-group">
+        <label for="qMin">Q min (m³/s)</label>
+        <input type="number" id="qMin" step="1" />
+        <label for="qMax">Q max (m³/s)</label>
+        <input type="number" id="qMax" step="10" />
+      </div>
+
+      <div class="field-group">
+        <label for="djgcMax">DJGC max (°C·d)</label>
+        <input type="number" id="djgcMax" step="50" />
+        <label for="djdcMax">DJDC-5 max (°C·d)</label>
+        <input type="number" id="djdcMax" step="10" />
+      </div>
+
+      <div class="field-group">
+        <label for="qBankfull">Reference Q (dashed line)</label>
+        <input type="number" id="qBankfull" step="5" />
+      </div>
+
+      <button type="button" id="drawBtn">Redraw</button>
+
+      <h2 style="margin-top: 1rem;">Control points</h2>
+      <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+        <button type="button" id="showPointsBtn">Show points</button>
+        <button type="button" id="hidePointsBtn" class="btn-secondary">
+          Hide points
+        </button>
+      </div>
+
+      <div class="field-group" style="margin-top:0.6rem;">
+        <label for="ptDj">Selected point DJ</label>
+        <input type="number" id="ptDj" step="1" />
+        <label for="ptQ">Selected point Q (m³/s)</label>
+        <input type="number" id="ptQ" step="1" />
+      </div>
+
+      <button type="button" id="updatePointBtn">Apply to selected point</button>
+
+      <div class="field-group" style="margin-top:0.6rem;">
+        <label for="addPanel">New point panel</label>
+        <select id="addPanel">
+          <option value="djgc">DJGC–Q</option>
+          <option value="djdc">DJDC-5–Q</option>
+        </select>
+        <label for="addZone">New point boundary</label>
+        <select id="addZone">
+          <option value="greenYellow">Green / Yellow boundary</option>
+          <option value="yellowRed">Yellow / Red boundary</option>
+        </select>
+      </div>
+
+      <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+        <button type="button" id="addPointBtn" class="btn-secondary">
+          Add point
+        </button>
+        <button type="button" id="deletePointBtn" class="btn-secondary">
+          Delete selected point
+        </button>
+      </div>
+
+      <div style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-top:0.5rem;">
+        <button type="button" id="moveLeftBtn" class="btn-secondary">
+          Move point earlier
+        </button>
+        <button type="button" id="moveRightBtn" class="btn-secondary">
+          Move point later
+        </button>
+      </div>
+
+      <p id="pointStatus">No point selected.</p>
+    </form>
+
+    <!-- D3 draws into this SVG -->
+    <svg id="diagram" width="900" height="450"></svg>
+  </div>
+
+  <script>
+    const margin = { top: 20, right: 20, bottom: 40, left: 70 };
+    const midGap = 45;
+
+    let showControlPoints = false;
+    // selectedPoint: { riverKey, panelKey: 'djgc'|'djdc', zone: 'greenYellow'|'yellowRed', index }
+    let selectedPoint = null;
+
+    const riverConfigs = {
+      lassomption: {
+        label: "L'Assomption River",
+        qMin: 5,
+        qMax: 500,
+        djgcMax: 1300,
+        djdcMax: 300,
+        qBankfull: 350,
+        djgcTicks: [0, 150, 300, 450, 600, 750, 900, 1050, 1200],
+        djdcTicks: [0, 50, 100, 150, 200, 250, 300],
+
+        djgcZones: {
+          greenYellow: [
+            { dj: 0, q: 200 },
+            { dj: 110, q: 200 },
+            { dj: 50, q: 150 },
+            { dj: 50, q: 50 },
+            { dj: 1300, q: 50 },
+          ],
+          yellowRed: [
+            { dj: 0, q: 250 },
+            { dj: 150, q: 250 },
+            { dj: 110, q: 150 },
+            { dj: 110, q: 100 },
+            { dj: 1300, q: 100 },
+          ],
+        },
+
+        djdcZones: {
+          greenYellow: [
+            { dj: 0, q: 50 },
+            { dj: 120, q: 50 },
+            { dj: 250, q: 150 },
+            { dj: 220, q: 200 },
+            { dj: 300, q: 200 },
+          ],
+          yellowRed: [
+            { dj: 0, q: 100 },
+            { dj: 120, q: 100 },
+            { dj: 160, q: 150 },
+            { dj: 120, q: 250 },
+            { dj: 300, q: 250 },
+          ],
+        },
+      },
+
+      montmorency: {
+        label: "Montmorency River",
+        qMin: 5,
+        qMax: 450,
+        djgcMax: 1100,
+        djdcMax: 260,
+        qBankfull: 240,
+        djgcTicks: [0, 200, 400, 600, 800, 1000],
+        djdcTicks: [0, 50, 100, 150, 200, 250],
+        djgcZones: {
+          greenYellow: [
+            { dj: 0, q: 40 },
+            { dj: 1100, q: 40 },
+          ],
+          yellowRed: [
+            { dj: 0, q: 80 },
+            { dj: 1100, q: 80 },
+          ],
+        },
+        djdcZones: {
+          greenYellow: [
+            { dj: 0, q: 40 },
+            { dj: 260, q: 60 },
+          ],
+          yellowRed: [
+            { dj: 0, q: 110 },
+            { dj: 260, q: 200 },
+          ],
+        },
+      },
+
+      steanne: {
+        label: "Ste-Anne River",
+        qMin: 5,
+        qMax: 400,
+        djgcMax: 1000,
+        djdcMax: 240,
+        qBankfull: 220,
+        djgcTicks: [0, 200, 400, 600, 800, 1000],
+        djdcTicks: [0, 50, 100, 150, 200, 240],
+        djgcZones: {
+          greenYellow: [
+            { dj: 0, q: 35 },
+            { dj: 1000, q: 35 },
+          ],
+          yellowRed: [
+            { dj: 0, q: 70 },
+            { dj: 1000, q: 70 },
+          ],
+        },
+        djdcZones: {
+          greenYellow: [
+            { dj: 0, q: 35 },
+            { dj: 240, q: 60 },
+          ],
+          yellowRed: [
+            { dj: 0, q: 100 },
+            { dj: 240, q: 190 },
+          ],
+        },
+      },
+    };
+
+    const svg = d3.select("#diagram");
+
+    function loadRiverConfig(key) {
+      const cfg = riverConfigs[key];
+      if (!cfg) return;
+      document.getElementById("qMin").value = cfg.qMin;
+      document.getElementById("qMax").value = cfg.qMax;
+      document.getElementById("djgcMax").value = cfg.djgcMax;
+      document.getElementById("djdcMax").value = cfg.djdcMax;
+      document.getElementById("qBankfull").value = cfg.qBankfull;
+      selectedPoint = null;
+      updatePointEditorStatus();
+      drawDiagram();
+    }
+
+    document
+      .getElementById("riverSelect")
+      .addEventListener("change", (e) => loadRiverConfig(e.target.value));
+    document.getElementById("drawBtn").addEventListener("click", drawDiagram);
+
+    document
+      .getElementById("showPointsBtn")
+      .addEventListener("click", () => {
+        showControlPoints = true;
+        drawDiagram();
+      });
+
+    document
+      .getElementById("hidePointsBtn")
+      .addEventListener("click", () => {
+        showControlPoints = false;
+        selectedPoint = null;
+        updatePointEditorStatus();
+        drawDiagram();
+      });
+
+    document
+      .getElementById("updatePointBtn")
+      .addEventListener("click", () => {
+        if (!selectedPoint) {
+          alert("No point selected.");
+          return;
+        }
+        const newDj = parseFloat(document.getElementById("ptDj").value);
+        const newQ = parseFloat(document.getElementById("ptQ").value);
+        if (isNaN(newDj) || isNaN(newQ)) {
+          alert("Please enter valid numeric values for DJ and Q.");
+          return;
+        }
+
+        const cfg = riverConfigs[selectedPoint.riverKey];
+        const zones =
+          selectedPoint.panelKey === "djgc"
+            ? cfg.djgcZones
+            : cfg.djdcZones;
+        const arr = zones[selectedPoint.zone];
+        if (!arr || selectedPoint.index < 0 || selectedPoint.index >= arr.length) {
+          alert("Internal error: point not found.");
+          return;
+        }
+
+        // update in place, keep order
+        arr[selectedPoint.index] = { dj: newDj, q: newQ };
+        drawDiagram();
+      });
+
+    document
+      .getElementById("addPointBtn")
+      .addEventListener("click", () => {
+        const riverKey = document.getElementById("riverSelect").value;
+        const cfg = riverConfigs[riverKey];
+        const panel = document.getElementById("addPanel").value; // 'djgc' | 'djdc'
+        const zone = document.getElementById("addZone").value;   // 'greenYellow' | 'yellowRed'
+
+        const newDj = parseFloat(document.getElementById("ptDj").value);
+        const newQ = parseFloat(document.getElementById("ptQ").value);
+        if (isNaN(newDj) || isNaN(newQ)) {
+          alert("Please enter DJ and Q in the fields above before adding.");
+          return;
+        }
+
+        const zones =
+          panel === "djgc" ? cfg.djgcZones : cfg.djdcZones;
+        const arr = zones[zone];
+        if (!arr) {
+          alert("Internal error: target zone not found.");
+          return;
+        }
+
+        // add & sort by DJ (default order)
+        arr.push({ dj: newDj, q: newQ });
+        arr.sort((a, b) => a.dj - b.dj);
+
+        // find new index for selection
+        const newIndex = arr.findIndex(
+          (p) => p.dj === newDj && p.q === newQ
+        );
+
+        selectedPoint = {
+          riverKey,
+          panelKey: panel,
+          zone,
+          index: newIndex >= 0 ? newIndex : arr.length - 1,
+        };
+        showControlPoints = true;
+        updatePointEditorStatus();
+        drawDiagram();
+      });
+
+    document
+      .getElementById("deletePointBtn")
+      .addEventListener("click", () => {
+        if (!selectedPoint) {
+          alert("No point selected to delete.");
+          return;
+        }
+
+        const riverKey = selectedPoint.riverKey;
+        const cfg = riverConfigs[riverKey];
+        const zones =
+          selectedPoint.panelKey === "djgc"
+            ? cfg.djgcZones
+            : cfg.djdcZones;
+        const arr = zones[selectedPoint.zone];
+        if (!arr || selectedPoint.index < 0 || selectedPoint.index >= arr.length) {
+          alert("Internal error: point not found.");
+          return;
+        }
+
+        arr.splice(selectedPoint.index, 1);
+        selectedPoint = null;
+        updatePointEditorStatus();
+        drawDiagram();
+      });
+
+    document
+      .getElementById("moveLeftBtn")
+      .addEventListener("click", () => {
+        if (!selectedPoint) {
+          alert("No point selected to move.");
+          return;
+        }
+        const cfg = riverConfigs[selectedPoint.riverKey];
+        const zones =
+          selectedPoint.panelKey === "djgc"
+            ? cfg.djgcZones
+            : cfg.djdcZones;
+        const arr = zones[selectedPoint.zone];
+        const i = selectedPoint.index;
+        if (!arr || i <= 0 || i >= arr.length) return;
+
+        const tmp = arr[i - 1];
+        arr[i - 1] = arr[i];
+        arr[i] = tmp;
+        selectedPoint.index = i - 1;
+        updatePointEditorStatus();
+        drawDiagram();
+      });
+
+    document
+      .getElementById("moveRightBtn")
+      .addEventListener("click", () => {
+        if (!selectedPoint) {
+          alert("No point selected to move.");
+          return;
+        }
+        const cfg = riverConfigs[selectedPoint.riverKey];
+        const zones =
+          selectedPoint.panelKey === "djgc"
+            ? cfg.djgcZones
+            : cfg.djdcZones;
+        const arr = zones[selectedPoint.zone];
+        const i = selectedPoint.index;
+        if (!arr || i < 0 || i >= arr.length - 1) return;
+
+        const tmp = arr[i + 1];
+        arr[i + 1] = arr[i];
+        arr[i] = tmp;
+        selectedPoint.index = i + 1;
+        updatePointEditorStatus();
+        drawDiagram();
+      });
+
+    function updatePointEditorStatus() {
+      const statusEl = document.getElementById("pointStatus");
+      if (!selectedPoint) {
+        statusEl.textContent = "No point selected.";
+        document.getElementById("ptDj").value = "";
+        document.getElementById("ptQ").value = "";
+        return;
+      }
+
+      const cfg = riverConfigs[selectedPoint.riverKey];
+      const panelLabel =
+        selectedPoint.panelKey === "djgc" ? "DJGC–Q panel" : "DJDC-5–Q panel";
+      const zoneLabel =
+        selectedPoint.zone === "greenYellow"
+          ? "green/yellow boundary"
+          : "yellow/red boundary";
+
+      statusEl.textContent =
+        `Selected: ${cfg.label} – ${panelLabel}, ${zoneLabel}, point #${selectedPoint.index + 1
+        }`;
+    }
+
+    function buildPolygonBelow(boundary, qBottom) {
+      if (!boundary || boundary.length < 2) return [];
+      const pts = [];
+      pts.push({ dj: boundary[0].dj, q: qBottom });
+      pts.push({ dj: boundary[boundary.length - 1].dj, q: qBottom });
+      for (let i = boundary.length - 1; i >= 0; i--) {
+        pts.push({ dj: boundary[i].dj, q: boundary[i].q });
+      }
+      return pts;
+    }
+
+    function buildPolygonBetween(lower, upper) {
+      if (!lower || !upper || lower.length < 2 || upper.length < 2) return [];
+      const pts = [];
+      lower.forEach((p) => pts.push({ dj: p.dj, q: p.q }));
+      for (let i = upper.length - 1; i >= 0; i--) {
+        pts.push({ dj: upper[i].dj, q: upper[i].q });
+      }
+      return pts;
+    }
+
+    function buildPolygonAbove(boundary, qTop) {
+      if (!boundary || boundary.length < 2) return [];
+      const pts = [];
+      pts.push({ dj: boundary[0].dj, q: qTop });
+      pts.push({ dj: boundary[boundary.length - 1].dj, q: qTop });
+      for (let i = boundary.length - 1; i >= 0; i--) {
+        pts.push({ dj: boundary[i].dj, q: boundary[i].q });
+      }
+      return pts;
+    }
+
+    function isSelectedPoint(riverKey, panelKey, zone, index) {
+      return (
+        selectedPoint &&
+        selectedPoint.riverKey === riverKey &&
+        selectedPoint.panelKey === panelKey &&
+        selectedPoint.zone === zone &&
+        selectedPoint.index === index
+      );
+    }
+
+    // drawControlPoints that cycles overlapping points across zones
+    function drawControlPoints(
+      g,
+      zones,
+      x,
+      y,
+      riverKey,
+      panelKey
+    ) {
+      if (!zones) return;
+
+      const pointsGroup = g.append("g").attr("class", "control-points");
+      const zoneKeys = ["greenYellow", "yellowRed"];
+
+      zoneKeys.forEach((zoneKey) => {
+        const arr = zones[zoneKey];
+        if (!arr) return;
+
+        pointsGroup
+          .selectAll("circle." + zoneKey)
+          .data(
+            arr.map((p, index) => ({
+              ...p,
+              index,
+              zoneKey,
+            }))
+          )
+          .enter()
+          .append("circle")
+          .attr("class", "point-" + zoneKey)
+          .attr("cx", (d) => x(d.dj))
+          .attr("cy", (d) => y(d.q))
+          .attr("r", 4)
+          .attr("fill", zoneKey === "greenYellow" ? "#2563eb" : "#111827")
+          .attr("stroke", (d) =>
+            isSelectedPoint(riverKey, panelKey, zoneKey, d.index)
+              ? "#f97316"
+              : "#ffffff"
+          )
+          .attr("stroke-width", 2)
+          .style("cursor", "pointer")
+          .on("click", (event, d) => {
+            const cfg = riverConfigs[riverKey];
+            const zonesLocal =
+              panelKey === "djgc" ? cfg.djgcZones : cfg.djdcZones;
+
+            // collect ALL overlapping points in this panel (both boundaries)
+            const same = [];
+            zoneKeys.forEach((zKey) => {
+              const arrLocal = zonesLocal[zKey] || [];
+              arrLocal.forEach((p, i) => {
+                if (p.dj === d.dj && p.q === d.q) {
+                  same.push({ zoneKey: zKey, index: i });
+                }
+              });
+            });
+
+            let chosen;
+            if (same.length === 0) {
+              chosen = { zoneKey: d.zoneKey, index: d.index };
+            } else if (same.length === 1) {
+              chosen = same[0];
+            } else {
+              if (
+                selectedPoint &&
+                selectedPoint.riverKey === riverKey &&
+                selectedPoint.panelKey === panelKey
+              ) {
+                const currentPos = same.findIndex(
+                  (p) =>
+                    p.zoneKey === selectedPoint.zone &&
+                    p.index === selectedPoint.index
+                );
+                if (currentPos !== -1) {
+                  chosen = same[(currentPos + 1) % same.length];
+                } else {
+                  chosen = same[0];
+                }
+              } else {
+                chosen = same[0];
+              }
+            }
+
+            const arrChosen = zonesLocal[chosen.zoneKey];
+            const pt = arrChosen[chosen.index];
+
+            selectedPoint = {
+              riverKey,
+              panelKey,
+              zone: chosen.zoneKey,
+              index: chosen.index,
+            };
+            document.getElementById("ptDj").value = pt.dj;
+            document.getElementById("ptQ").value = pt.q;
+            updatePointEditorStatus();
+            drawDiagram(); // redraw to update highlight
+          });
+      });
+    }
+
+    function drawDiagram() {
+      const riverKey = document.getElementById("riverSelect").value;
+      const cfg = riverConfigs[riverKey];
+
+      const qMin =
+        parseFloat(document.getElementById("qMin").value) || cfg.qMin;
+      const qMax =
+        parseFloat(document.getElementById("qMax").value) || cfg.qMax;
+      const djgcMax =
+        parseFloat(document.getElementById("djgcMax").value) || cfg.djgcMax;
+      const djdcMax =
+        parseFloat(document.getElementById("djdcMax").value) || cfg.djdcMax;
+      const qBank =
+        parseFloat(document.getElementById("qBankfull").value) ||
+        cfg.qBankfull;
+
+      const width = parseFloat(svg.attr("width"));
+      const height = parseFloat(svg.attr("height"));
+      const panelWidth =
+        (width - margin.left - margin.right - midGap) / 2;
+      const panelHeight = height - margin.top - margin.bottom;
+
+      svg.selectAll("*").remove();
+
+      const gRoot = svg
+        .append("g")
+        .attr("transform", `translate(${margin.left},${margin.top})`);
+
+      const y = d3
+        .scaleLog()
+        .domain([qMin, qMax])
+        .range([panelHeight, 0]);
+
+      // Major ticks for axis labels; more ticks for grid
+      const qMajorTicks = y.ticks(7).filter(
+        (v) => v >= qMin && v <= qMax
+      );
+      const qGridTicks = y.ticks(30).filter(
+        (v) => v >= qMin && v <= qMax
+      );
+
+      // Left panel (DJGC)
+      const gLeft = gRoot.append("g").attr("transform", "translate(0,0)");
+      const xDJGC = d3
+        .scaleLinear()
+        .domain([0, djgcMax])
+        .range([0, panelWidth]);
+
+      drawPanel(
+        gLeft,
+        cfg.djgcZones,
+        xDJGC,
+        y,
+        panelWidth,
+        panelHeight,
+        cfg.djgcTicks,
+        qMajorTicks,
+        qGridTicks,
+        qBank,
+        true
+      );
+
+      // Right panel (DJDC-5)
+      const gRight = gRoot
+        .append("g")
+        .attr("transform", `translate(${panelWidth + midGap},0)`);
+      const xDJDC = d3
+        .scaleLinear()
+        .domain([0, djdcMax])
+        .range([0, panelWidth]);
+
+      drawPanel(
+        gRight,
+        cfg.djdcZones,
+        xDJDC,
+        y,
+        panelWidth,
+        panelHeight,
+        cfg.djdcTicks,
+        qMajorTicks,
+        qGridTicks,
+        qBank,
+        true
+      );
+
+      if (showControlPoints) {
+        drawControlPoints(gLeft, cfg.djgcZones, xDJGC, y, riverKey, "djgc");
+        drawControlPoints(gRight, cfg.djdcZones, xDJDC, y, riverKey, "djdc");
+      }
+
+      // Axis titles
+      gLeft
+        .append("text")
+        .attr("x", panelWidth / 2)
+        .attr("y", panelHeight + 30)
+        .attr("text-anchor", "middle")
+        .attr("font-size", 12)
+        .text("DJGC (°C·d)");
+
+      gRight
+        .append("text")
+        .attr("x", panelWidth / 2)
+        .attr("y", panelHeight + 30)
+        .attr("text-anchor", "middle")
+        .attr("font-size", 12)
+        .text("DJDC -5 °C (°C·d)");
+
+      gLeft
+        .append("text")
+        .attr("transform", `rotate(-90)`)
+        .attr("x", -panelHeight / 2)
+        .attr("y", -50)
+        .attr("text-anchor", "middle")
+        .attr("font-size", 12)
+        .text("Q (m³/s)");
+    }
+
+    function drawPanel(
+      g,
+      zones,
+      x,
+      y,
+      panelWidth,
+      panelHeight,
+      xTicks,
+      qMajorTicks,
+      qGridTicks,
+      qBank,
+      showYAxisLabels
+    ) {
+      // background
+      g.append("rect")
+        .attr("x", 0)
+        .attr("y", 0)
+        .attr("width", panelWidth)
+        .attr("height", panelHeight)
+        .attr("fill", "#ffffff")
+        .attr("stroke", "#000");
+
+      // horizontal grid – minor (logarithmic)
+      const gyMinor = g.append("g").attr("class", "grid-y-minor");
+      gyMinor
+        .call(
+          d3
+            .axisLeft(y)
+            .tickValues(qGridTicks)
+            .tickSize(-panelWidth)
+            .tickFormat("")
+        );
+      gyMinor.selectAll("line").attr("stroke", "#e5e7eb");
+      gyMinor.select(".domain").remove();
+
+      // horizontal grid – major
+      const gyMajor = g.append("g").attr("class", "grid-y-major");
+      gyMajor
+        .call(
+          d3
+            .axisLeft(y)
+            .tickValues(qMajorTicks)
+            .tickSize(-panelWidth)
+            .tickFormat("")
+        );
+      gyMajor.selectAll("line")
+        .attr("stroke", "#d1d5db")
+        .attr("stroke-width", 1);
+      gyMajor.select(".domain").remove();
+
+      // zones (polygons)
+      if (zones) {
+        const lineGen = d3
+          .line()
+          .x((d) => x(d.dj))
+          .y((d) => y(d.q));
+
+        const greenPoly = buildPolygonBelow(zones.greenYellow, y.domain()[0]);
+        const yellowPoly = buildPolygonBetween(
+          zones.greenYellow,
+          zones.yellowRed
+        );
+        const redPoly = buildPolygonAbove(zones.yellowRed, y.domain()[1]);
+
+        if (greenPoly.length > 0) {
+          g.append("path")
+            .attr("d", lineGen(greenPoly) + "Z")
+            .attr("fill", "rgba(29,211,29,0.53)");
+        }
+        if (yellowPoly.length > 0) {
+          g.append("path")
+            .attr("d", lineGen(yellowPoly) + "Z")
+            .attr("fill", "rgba(246,240,26,0.53)");
+        }
+        if (redPoly.length > 0) {
+          g.append("path")
+            .attr("d", lineGen(redPoly) + "Z")
+            .attr("fill", "rgba(255,0,0,0.53)");
+        }
+      }
+
+      // vertical grid (linear in DJ)
+      const gxGrid = g
+        .append("g")
+        .attr("class", "grid-x")
+        .attr("transform", `translate(0,${panelHeight})`);
+      gxGrid
+        .call(
+          d3
+            .axisBottom(x)
+            .tickValues(xTicks || x.ticks(6))
+            .tickSize(-panelHeight)
+            .tickFormat("")
+        );
+      gxGrid.selectAll("line").attr("stroke", "#e5e7eb");
+      gxGrid.select(".domain").remove();
+
+      // X-axis
+      const xAxis = d3
+        .axisBottom(x)
+        .tickValues(xTicks || [])
+        .tickFormat(d3.format("~g"));
+
+      g.append("g")
+        .attr("transform", `translate(0,${panelHeight})`)
+        .call(xAxis);
+
+      // Y-axis (with Q labels on left panel, hidden text on right)
+      const yAxis = d3
+        .axisLeft(y)
+        .tickValues(qMajorTicks)
+        .tickFormat(showYAxisLabels ? d3.format("~g") : () => "");
+
+      g.append("g").call(yAxis);
+
+      // reference line (bankfull Q)
+      if (!isNaN(qBank)) {
+        g.append("line")
+          .attr("x1", 0)
+          .attr("x2", panelWidth)
+          .attr("y1", y(qBank))
+          .attr("y2", y(qBank))
+          .attr("stroke", "#000")
+          .attr("stroke-dasharray", "6,4");
+      }
+    }
+
+    // Firebase SDK status (optional)
+    document.addEventListener("DOMContentLoaded", () => {
+      const loadEl = document.getElementById("load");
+      if (!loadEl) return;
+      try {
+        const app = firebase.app();
+        const features = [
+          "auth",
+          "database",
+          "firestore",
+          "functions",
+          "messaging",
+          "storage",
+          "analytics",
+          "remoteConfig",
+          "performance",
+        ].filter((f) => typeof app[f] === "function");
+        loadEl.textContent = `Firebase SDK loaded with: ${features.join(", ")}`;
+      } catch (e) {
+        console.error(e);
+        loadEl.textContent =
+          "Error loading the Firebase SDK, check the console.";
+      }
+    });
+
+    // Initial river: L'Assomption
+    loadRiverConfig("lassomption");
+  </script>
+</body>
+
+</html>
