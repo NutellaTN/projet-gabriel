@@ -10,8 +10,13 @@ This project is a real-time monitoring tool for river ice breakup, visualizing t
     - **`style.css`**: The stylesheet. It uses a CSS variable-based design system for a dark/glassmorphism UI. It includes responsive styles for mobile devices.
     - **`river-data.js`**: Configuration file containing static data for each river (Label, Axis limits, Zone definitions for Green/Yellow/Red regions).
     - **`chart.js`**: The visualization engine using **D3.js**. It renders the two-panel chart (Freezing Index vs. Q, Thawing Index vs. Q) and handles the "zones" polygons and control points.
-    - **`data-import.js`**: Utilities for fetching and processing raw data (Discharge and Temperature). It contains the core algorithms for calculating thermal indices.
-    - **`firebase-config.js`**: Configuration for Firebase Analytics.
+    - **`firestore-service.js`**: Client-side service that subscribes to real-time updates from Firebase Firestore.
+    - **`data-import.js`**: Legacy utilities for local CSV processing (now largely superseded by Firestore data for real-time views).
+    - **`firebase-config.js`**: Configuration for Firebase Analytics and Firestore.
+- **`scripts/`**: Backend Python scripts for data fetching and processing.
+    - **`poll_daily.py`**: The core data pipeline. Fetches weather data (ECCC/Open-Meteo) and discharge data (CEHQ), calculates thermal indices, forecasts future values, and updates Firestore.
+- **`.github/workflows/`**: CI/CD automation.
+    - **`poll_daily.yml`**: GitHub Action that runs `poll_daily.py` every day at 16:00 UTC to keep the data fresh.
 
 ## Algorithms
 
@@ -58,6 +63,37 @@ Both panels include:
     npm run dev
     ```
 3.  Open the local URL (usually `http://localhost:5173`).
+
+### Backend Setup (Optional)
+
+If you wish to run the data fetching scripts locally:
+
+1.  **Environment Variables**:
+    You must set the following environment variables (or provided in a `.env` file or `service-account.json` for local use):
+    - `FIREBASE_SA_JSON_B64`: Base64 encoded Service Account JSON for Firebase Admin SDK.
+    - `ECCC_CITY_ID`: City ID for Environment Canada weather data (default: `s0000635`).
+
+2.  **Install Python Dependencies**:
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+3.  **Run the Poll Script**:
+    ```bash
+    python scripts/poll_daily.py
+    ```
+
+## Data Architecture
+
+The system operates on a **Serverless-Data-Push** model:
+
+1.  **Ingestion**: The `poll_daily.py` script runs automatically via GitHub Actions.
+2.  **Processing**: It fetches:
+    - **Weather**: ECCC Datamart / Open-Meteo API.
+    - **Discharge**: CEHQ (Quebec Hydrology).
+    - Calculates the **DJGC** and **DJDC-5** indices based on the active season rules (see Algorithms below).
+3.  **Storage**: Processed data (Historical series + 7-day Prediction) is stored in **Firebase Firestore** under `stations/{stationId}/seasons/{seasonId}`.
+4.  **Presentation**: The frontend subscribes to this Firestore document. Updates are pushed instantly to connected clients.
 
 ## Configuration
 

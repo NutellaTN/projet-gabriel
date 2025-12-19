@@ -60,7 +60,7 @@ async function loadRiverConfig(key) {
     if (key === 'lassomption') {
         const unsubscribe = subscribeToSeasonData(key, (data) => {
             currentSeries = data;
-            drawDiagram(selectedPoint, showControlPoints, handlePointSelect, currentSeries);
+            drawDiagram(selectedPoint, showControlPoints, onPointSelect, currentSeries);
         });
         // Note: unsubscribe is not handled on river switch in this simple version, 
         // but for a single river app it's fine.

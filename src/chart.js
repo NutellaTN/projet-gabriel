@@ -66,7 +66,7 @@ function drawControlPoints(
         if (!arr) return;
 
         pointsGroup
-            .selectAll("circle." + zoneKey)
+            .selectAll("circle.point-" + zoneKey)
             .data(
                 arr.map((p, index) => ({
                     ...p,
@@ -426,10 +426,11 @@ function renderChart(svgId, limits, data, showControlPoints, selectedPoint, onPo
 
     // --- DRAW DATA (New Structure: Historical, Latest, Prediction) ---
 
-    // Unpack new structure
-    const historical = data.historical || [];
-    const latest = data.latest || null;
-    const prediction = data.prediction || [];
+    // Unpack new structure (with safety check)
+    const safeData = data || {};
+    const historical = safeData.historical || [];
+    const latest = safeData.latest || null;
+    const prediction = safeData.prediction || [];
 
     // Helper to draw on correct panel based on phase
     const drawOnPanel = (item, type) => {
