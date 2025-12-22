@@ -3,14 +3,14 @@ import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
-    apiKey: "AIzaSyCbBOWSmE1RhfGsdzij2FNQBMuTOs3vrdg",
-    authDomain: "ril-gp.firebaseapp.com",
-    databaseURL: "https://ril-gp-default-rtdb.firebaseio.com",
-    projectId: "ril-gp",
-    storageBucket: "ril-gp.firebasestorage.app",
-    messagingSenderId: "105298276512",
-    appId: "1:105298276512:web:18c9b60e5380a5cc0cd9c5",
-    measurementId: "G-E03RXTETYY"
+    apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+    authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+    databaseURL: import.meta.env.VITE_FIREBASE_DATABASE_URL,
+    projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+    storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+    appId: import.meta.env.VITE_FIREBASE_APP_ID,
+    measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
 // Initialize Firebase (Modular)
