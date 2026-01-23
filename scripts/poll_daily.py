@@ -382,7 +382,30 @@ def compute_indices(phase, dj_yesterday, t_avg_today):
         # (Note: This can go negative if we strictly follow net. But usually starts at 0 and grows).
         if dj < 0: dj = 0
         
+    else:
+        # OPEN_WATER or other
+        dj = 0
+
     return dj
+
+def get_phase_for_date(date_obj):
+    """
+    Returns 'DJGC', 'DJDC-5', or 'OPEN_WATER' based on user rules:
+    - DJGC: Oct 15 to Feb 14
+    - DJDC-5: Feb 15 to May 15
+    """
+    m = date_obj.month
+    d = date_obj.day
+    md = m * 100 + d
+    
+    # Oct 15 (1015) to Dec 31 (1231) OR Jan 1 (101) to Feb 14 (214)
+    if md >= 1015 or md < 215:
+        return "DJGC"
+    # Feb 15 (215) to May 15 (515)
+    elif 215 <= md <= 515:
+        return "DJDC-5"
+    else:
+        return "OPEN_WATER"
 
 def get_db_state(db, station_id, season_id):
     ref = db.collection('stations').document(station_id).collection('seasons').document(season_id)
@@ -493,16 +516,23 @@ def main():
         d_str = day_obj.strftime('%Y-%m-%d')
         
         # Check Phase
-        # Rule: Feb 15 starts DJDC-5
-        if day_obj.month == 2 and day_obj.day == 15:
-            running_phase = "DJDC-5"
-            running_dj = 0 # Reset?
-            # Or preserve? Usually reset for new index.
-            
-        if day_obj.month > 2 or (day_obj.month == 2 and day_obj.day >= 15):
-             running_phase = "DJDC-5"
-        else:
-             running_phase = "DJGC"
+        # Use centralized logic
+        new_phase = get_phase_for_date(day_obj)
+        
+        # Reset Logic at boundaries
+        if new_phase != running_phase:
+             # If switching INTO DJDC-5 (Feb 15 start), reset DJ to 0
+             if new_phase == "DJDC-5":
+                 running_dj = 0
+             # If switching into Open Water, reset?
+             elif new_phase == "OPEN_WATER":
+                 running_dj = 0
+             # If switching into DJGC (Oct 15), usually handled by new Season ID, 
+             # but if this script runs across that boundary for some reason:
+             elif new_phase == "DJGC" and running_phase == "OPEN_WATER":
+                 running_dj = 0
+                 
+        running_phase = new_phase
              
         # Get Data
         t_data = obs_temps.get(d_str, {})
@@ -558,9 +588,11 @@ def main():
         f_avg = (f_max + curr_prev_low) / 2.0
         
         # Phase check
-        if f_date.month == 2 and f_date.day == 15:
-             curr_pred_phase = "DJDC-5"
-             curr_pred_dj = 0
+        new_p_phase = get_phase_for_date(f_date)
+        if new_p_phase != curr_pred_phase:
+             if new_p_phase == "DJDC-5": curr_pred_dj = 0
+             elif new_p_phase == "OPEN_WATER": curr_pred_dj = 0
+             curr_pred_phase = new_p_phase
         
         curr_pred_dj = compute_indices(curr_pred_phase, curr_pred_dj, f_avg)
         
