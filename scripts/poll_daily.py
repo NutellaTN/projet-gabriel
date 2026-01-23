@@ -332,6 +332,21 @@ def fetch_xml_forecast_legacy(city_id):
 
 # --- LOGIC ---
 
+def fetch_cehq_forecast_q(station_id):
+    """
+    Fetch JSON forecast from CEHQ (Legacy/Fallback until OGC collection is ready).
+    """
+    url = f"https://www.cehq.gouv.qc.ca/depot/suivihydro/bd/JSON/{station_id}.json"
+    print(f"Fetching Forecast Q from {url}...")
+    try:
+        r = requests.get(url, timeout=10)
+        data = r.json()
+        return data.get('prevision', [])
+    except Exception as e:
+        print(f"Error fetching Q forecast: {e}")
+        return []
+
+
 def compute_indices(phase, dj_yesterday, t_avg_today):
     """
     Returns new DJ value.
@@ -444,6 +459,9 @@ def main():
     
     # Fetch Forecast T (for predictions starting from Today+1)
     forecast_temps = fetch_citypage_forecast(ECCC_CITY_ID)
+
+    # Fetch Forecast Q (CEHQ)
+    forecast_q_raw = fetch_cehq_forecast_q(STATION_ID)
     
     # 4. PROCESS LOOP
     # We need to maintain running DJ state.
@@ -546,12 +564,16 @@ def main():
         
         curr_pred_dj = compute_indices(curr_pred_phase, curr_pred_dj, f_avg)
         
-        # Forecast Q?
-        # Placeholder for now
+
+        # Forecast Q
+        # Find matching date in CEHQ JSON
+        # CEHQ datePrevision format: "YYYY-MM-DD HH:MM:SS" or similar
+        found_q = next((item for item in forecast_q_raw if item.get('datePrevision', '').startswith(f_str)), None)
+        q_val_pred = float(found_q['qMCS']) if found_q else 0
         
         pred_vals[f_str] = {
             'dj': round(curr_pred_dj, 1),
-            'q': 0, # TODO: Connect Forecast Discharge
+            'q': q_val_pred, 
             'phase': curr_pred_phase
         }
         
