@@ -210,6 +210,7 @@ function drawPanel(
     if (zones) {
         const lineGen = d3
             .line()
+            .defined(d => !isNaN(d.dj) && !isNaN(d.q) && d.q > 0)
             .x((d) => x(d.dj))
             .y((d) => y(d.q));
 
@@ -453,27 +454,56 @@ function renderChart(svgId, limits, data, showControlPoints, selectedPoint, onPo
         if (!panelG) return;
 
         if (type === 'hist') {
-            panelG.append("circle")
-                .attr("cx", xScale(item.dj))
-                .attr("cy", y(item.q))
-                .attr("r", 2.5)
-                .attr("fill", "black")
-                .attr("opacity", 0.6);
+            // No longer drawing individual circles for historical points
+            // so it looks like a continuous line.
         } else if (type === 'latest') {
             panelG.append("circle")
                 .attr("cx", xScale(item.dj))
                 .attr("cy", y(item.q))
                 .attr("r", 5)
                 .attr("fill", "white")
-                .attr("stroke", "black")
+                .attr("stroke", "#3b82f6") // Blue to match the line
                 .attr("stroke-width", 2);
         }
     };
 
-    // 1. Draw Historical (Black)
+    // Combine historical and latest to draw a continuous line
+    const allObserved = [...historical];
+    if (latest) allObserved.push(latest);
+
+    // Group allObserved by phase
+    const obsByPhase = { DJGC: [], DJDC5: [] };
+    allObserved.forEach(d => {
+        if (d.phase === "DJGC") obsByPhase.DJGC.push(d);
+        else if (d.phase === "DJDC5") obsByPhase.DJDC5.push(d);
+    });
+
+    // Draw connecting lines for observed points
+    Object.keys(obsByPhase).forEach(phase => {
+        const pts = obsByPhase[phase];
+        if (pts.length > 1) {
+            const pG = phase === "DJGC" ? gLeftClipped : gRightClipped;
+            const pX = phase === "DJGC" ? xDJGC : xDJDC;
+
+            const lineGen = d3.line()
+                .defined(d => !isNaN(d.dj) && !isNaN(d.q) && d.q > 0)
+                .x(d => pX(d.dj))
+                .y(d => y(d.q));
+
+            pG.append("path")
+                .datum(pts)
+                .attr("fill", "none")
+                .attr("stroke", "#3b82f6") // Blue
+                .attr("stroke-opacity", 1.0)
+                .attr("stroke-width", 2)
+                .attr("d", lineGen);
+        }
+    });
+
+    // 1. Draw Historical (Black points)
     historical.forEach(d => drawOnPanel(d, 'hist'));
 
-    // 2. Draw Latest (White)
+    // 2. Draw Latest (White point)
     if (latest) drawOnPanel(latest, 'latest');
 
     // 3. Draw Prediction (Blue Line + Area)
@@ -494,6 +524,7 @@ function renderChart(svgId, limits, data, showControlPoints, selectedPoint, onPo
         if (pG) {
             // Area
             const areaGen = d3.area()
+                .defined(d => !isNaN(d.dj) && !isNaN(d.q25) && !isNaN(d.q75) && d.q25 > 0 && d.q75 > 0)
                 .x(d => pX(d.dj))
                 .y0(d => y(d.q25))
                 .y1(d => y(d.q75));
@@ -506,6 +537,7 @@ function renderChart(svgId, limits, data, showControlPoints, selectedPoint, onPo
 
             // Line (Median)
             const lineGen = d3.line()
+                .defined(d => !isNaN(d.dj) && !isNaN(d.q) && d.q > 0)
                 .x(d => pX(d.dj))
                 .y(d => y(d.q));
 

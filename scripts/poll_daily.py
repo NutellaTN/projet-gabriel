@@ -1,636 +1,504 @@
+#!/usr/bin/env python3
+from __future__ import annotations
 
-import os
-import sys
-import json
+import argparse
 import base64
+import datetime as dt
+import json
+import math
+import os
+import re
+import sys
+from collections import defaultdict
+from typing import Any, Dict, List, Optional, Tuple
+
 import requests
-import datetime
 import pytz
 import firebase_admin
 from firebase_admin import credentials, firestore
+from dotenv import load_dotenv
 
-# --- CONFIG ---
-STATION_ID = "052219" # L'Assomption (Hydrometric)
-SWOB_STATION_CODE = os.environ.get("SWOB_STATION_CODE", "7014160") # L'Assomption ID provided by user
-ECCC_CITY_ID = os.environ.get("ECCC_CITY_ID", "s0000635") # For CityPage Weather Forecast
-TZ_QC = pytz.timezone('America/Toronto')
+# Load environment variables from .env if present
+load_dotenv()
+
+# -----------------------------
+# CONFIG DEFAULTS (you can override via CLI)
+# -----------------------------
 MSC_API_URL = "https://api.weather.gc.ca"
+MSC_UA = "ril-backfill/1.0 (+https://api.weather.gc.ca/)"
+CEHQ_UA = "ril-backfill/1.0 (+https://www.cehq.gouv.qc.ca/)"
+CEHQ_QTXT_URL = "https://www.cehq.gouv.qc.ca/depot/historique_donnees/fichier/{station}_Q.txt"
 
-# --- FIREBASE SETUP ---
-def init_firebase():
+TZ_QC = pytz.timezone("America/Toronto")
+
+
+# -----------------------------
+# FIREBASE SETUP (same pattern you use)
+# -----------------------------
+def init_firebase() -> firestore.Client:
     if not firebase_admin._apps:
         b64_json = os.environ.get("FIREBASE_SA_JSON_B64")
         if b64_json:
             try:
-                cred_json = json.loads(base64.b64decode(b64_json).decode('utf-8'))
+                cred_json = json.loads(base64.b64decode(b64_json).decode("utf-8"))
                 cred = credentials.Certificate(cred_json)
                 firebase_admin.initialize_app(cred)
             except Exception as e:
-                print(f"Error initializing from B64 Secret: {e}")
+                print(f"Error initializing Firebase from FIREBASE_SA_JSON_B64: {e}")
                 sys.exit(1)
         else:
             try:
-                cred = credentials.Certificate("service-account.json")
+                # Try finding it relative to the script
+                script_dir = os.path.dirname(os.path.abspath(__file__))
+                sa_path = os.path.join(script_dir, "service-account.json")
+                if not os.path.exists(sa_path):
+                    # Fallback to current working directory
+                    sa_path = "service-account.json"
+                cred = credentials.Certificate(sa_path)
                 firebase_admin.initialize_app(cred)
-            except:
-                print("No credentials found. Set FIREBASE_SA_JSON_B64.")
+            except Exception as e:
+                print(f"No credentials found. Set FIREBASE_SA_JSON_B64 or provide service-account.json. Error: {e}")
                 sys.exit(1)
     return firestore.client()
 
-# --- UTILS ---
-def get_now_qc():
-    return datetime.datetime.now(TZ_QC)
 
-def get_today_qc_str():
-    return get_now_qc().strftime('%Y-%m-%d')
+# -----------------------------
+# UTILS
+# -----------------------------
+def parse_date_iso(s: str) -> dt.date:
+    return dt.datetime.strptime(s, "%Y-%m-%d").date()
 
-def get_season_id(date_obj):
-    year = date_obj.year
-    month = date_obj.month
-    day = date_obj.day
+
+def date_range(start: dt.date, end: dt.date) -> List[dt.date]:
+    out = []
+    cur = start
+    while cur <= end:
+        out.append(cur)
+        cur += dt.timedelta(days=1)
+    return out
+
+
+def get_season_id(date_obj: dt.date) -> str:
     # Season rule: starts Oct 15
-    if month > 10 or (month == 10 and day >= 15):
-        return f"{year}_{str(year+1)[2:]}"
-    else:
-        return f"{year-1}_{str(year)[2:]}"
+    y = date_obj.year
+    md = date_obj.month * 100 + date_obj.day
+    if md >= 1015:
+        return f"{y}_{str(y+1)[2:]}"
+    return f"{y-1}_{str(y)[2:]}"
 
-# --- MSC PYGEOAPI FETCHERS ---
 
-def fetch_swob_temperatures(station_code, start_date, end_date):
+def qc_midday_iso(d: dt.date) -> str:
+    # Use midday to avoid DST edge cases at 00:00
+    naive = dt.datetime(d.year, d.month, d.day, 12, 0, 0)
+    aware = TZ_QC.localize(naive)
+    return aware.isoformat()
+
+
+def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    R = 6371.0088
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlmb = math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dlmb / 2) ** 2
+    return 2 * R * math.asin(math.sqrt(a))
+
+
+def bbox_from_radius_km(lat: float, lon: float, radius_km: float) -> List[float]:
+    lat_deg = radius_km / 111.0
+    lon_deg = radius_km / (111.0 * max(0.1, math.cos(math.radians(lat))))
+    return [lon - lon_deg, lat - lat_deg, lon + lon_deg, lat + lat_deg]
+
+
+def get_json(path: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    url = f"{MSC_API_URL}{path}"
+    r = requests.get(url, params=params, timeout=60, headers={"User-Agent": MSC_UA})
+    r.raise_for_status()
+    return r.json()
+
+
+def to_float(x: Any) -> Optional[float]:
+    if x is None:
+        return None
+    try:
+        return float(x)
+    except Exception:
+        return None
+
+
+# -----------------------------
+# MSC CLIMATE-DAILY (daily mean temperature)
+# -----------------------------
+def fetch_candidate_stations(lat: float, lon: float, radius_km: float, province_code: str = "QC") -> List[Dict[str, Any]]:
+    bbox = bbox_from_radius_km(lat, lon, radius_km)
+    data = get_json(
+        "/collections/climate-stations/items",
+        {
+            "f": "json",
+            "lang": "en",
+            "bbox": ",".join(map(str, bbox)),
+            "limit": 800,
+            "PROV_STATE_TERR_CODE": province_code,
+        },
+    )
+
+    feats = data.get("features", []) or []
+    stations: List[Dict[str, Any]] = []
+    for feat in feats:
+        geom = feat.get("geometry") or {}
+        coords = geom.get("coordinates") or [None, None]
+        st_lon, st_lat = coords[0], coords[1]
+        if st_lat is None or st_lon is None:
+            continue
+
+        props = feat.get("properties") or {}
+        climate_id = props.get("CLIMATE_IDENTIFIER")
+        if not climate_id:
+            continue
+
+        dist = haversine_km(lat, lon, float(st_lat), float(st_lon))
+        stations.append(
+            {
+                "distance_km": dist,
+                "lat": float(st_lat),
+                "lon": float(st_lon),
+                "name": props.get("STATION_NAME") or "Unknown",
+                "climate_id": climate_id,
+            }
+        )
+
+    stations.sort(key=lambda s: s["distance_km"])
+    return stations
+
+
+def fetch_climate_daily(climate_identifier: str, start: dt.date, end: dt.date) -> List[Dict[str, Any]]:
+    time_range = f"{start.isoformat()}/{end.isoformat()}"
+    props_filter = ",".join(
+        [
+            "LOCAL_DATE",
+            "MEAN_TEMPERATURE",
+            "MEAN_TEMPERATURE_FLAG",
+            "MIN_TEMPERATURE",
+            "MAX_TEMPERATURE",
+            "STATION_NAME",
+            "CLIMATE_IDENTIFIER",
+        ]
+    )
+
+    out: List[Dict[str, Any]] = []
+    limit = 500
+    offset = 0
+
+    while True:
+        data = get_json(
+            "/collections/climate-daily/items",
+            {
+                "f": "json",
+                "lang": "en",
+                "CLIMATE_IDENTIFIER": climate_identifier,
+                "datetime": time_range,
+                "properties": props_filter,
+                "sortby": "LOCAL_DATE",
+                "limit": limit,
+                "offset": offset,
+            },
+        )
+        feats = data.get("features", []) or []
+        if not feats:
+            break
+        out.extend(feats)
+        if len(feats) < limit:
+            break
+        offset += limit
+
+    return out
+
+
+def build_temp_maps(feats: List[Dict[str, Any]]) -> Tuple[Dict[str, Optional[float]], Dict[str, str]]:
     """
-    Fetches observed temperatures from swob-realtime.
-    Returns: dict { 'YYYY-MM-DD': { 'temp_min': float, 'temp_max': float } }
+    Returns:
+      mean_by_date: { 'YYYY-MM-DD': mean_temp or None }
+      flag_by_date: { 'YYYY-MM-DD': flag string (maybe empty) }
+    Dedup by date: keep first occurrence.
     """
-    collection = "swob-realtime"
-    # ISO 8601 format for range: start/end
-    # Note: MSC API expects UTC or specific time format usually. 
-    # Let's request a wide range and filter client side or use datetime query param carefully.
-    # swob-realtime datetime param: "2024-01-01T00:00:00Z/2024-01-02T23:59:59Z"
+    mean_by_date: Dict[str, Optional[float]] = {}
+    flag_by_date: Dict[str, str] = {}
+
+    rows: List[Tuple[str, Optional[float], str]] = []
+    for f in feats:
+        p = f.get("properties") or {}
+        local_date = p.get("LOCAL_DATE")
+        if not local_date:
+            continue
+        # MSC API can return 'YYYY-MM-DD 00:00:00' or 'YYYY-MM-DD', we only want the date part
+        d = str(local_date)[:10]
+        mean_t = to_float(p.get("MEAN_TEMPERATURE"))
+        flag = str(p.get("MEAN_TEMPERATURE_FLAG") or "")
+        rows.append((d, mean_t, flag))
+
+    rows.sort(key=lambda x: x[0])
+    for d, mean_t, flag in rows:
+        if d in mean_by_date:
+            continue
+        mean_by_date[d] = mean_t
+        flag_by_date[d] = flag
+
+    return mean_by_date, flag_by_date
+
+
+def compute_djgc_over_range(mean_by_date: Dict[str, Optional[float]]) -> Dict[str, float]:
+    """
+    Computes DJGC starting at 0, day by day chronologically, using mean daily temperature T_mean:
+      - if T_mean < 0: DJGC += abs(T_mean)
+      - if T_mean > 0: DJGC = max(0, DJGC - T_mean)
+      - if T_mean == 0 or missing: DJGC unchanged
+    """
+    djgc = 0.0
+    out: Dict[str, float] = {}
     
-    # Simple strategy: Fetch strictly daily stats? SWOB gives hourly/minute obs.
-    # We need to aggregate min/max per day ourselves from the hourly data.
+    # Sort dates chronologically to ensure proper DJGC accumulation
+    sorted_dates = sorted(mean_by_date.keys())
     
-    url = f"{MSC_API_URL}/collections/{collection}/items"
-    params = {
-        'station': station_code, # Queryable might be 'station' or 'STATION_NUMBER' depending on collection
-        # Check SWOB queryables: usually 'station' or 'id' or 'wmo_synop_id' etc. 
-        # For simplicity in this script, we'll assume the user configures the correct query param or we filter result.
-        # Actually swob-realtime uses `station` usually.
-        'datetime': f"{start_date}T00:00:00/{end_date}T23:59:59",
-        'limit': 10000, # Max for safe pagination, might need paging loop if range is huge
-        'properties': 'date_tm,air_temp' # Only fetch what we need
+    for ds in sorted_dates:
+        mean_t = mean_by_date.get(ds)
+        
+        if mean_t is None:
+            # no update if missing
+            out[ds] = round(djgc, 3)
+            continue
+            
+        if mean_t < 0:
+            djgc += abs(mean_t)
+        elif mean_t > 0:
+            djgc = max(0.0, djgc - mean_t)
+            
+        out[ds] = round(djgc, 3)
+        
+    return out
+
+
+# -----------------------------
+# CEHQ Q.TXT (daily discharge)
+# -----------------------------
+DATA_RE = re.compile(
+    r"^\s*(?P<station>\d+)\s+"
+    r"(?P<date>\d{4}/\d{2}/\d{2})\s+"
+    r"(?P<q>-?\d+(?:[.,]\d+)?)"
+    r"(?:\s+(?P<remark>\S+))?\s*$"
+)
+
+
+def fetch_text(url: str) -> str:
+    r = requests.get(url, timeout=120, headers={"User-Agent": CEHQ_UA})
+    r.raise_for_status()
+    if not r.encoding:
+        r.encoding = "utf-8"
+    text = r.text
+    # If decoding looks broken, fallback to latin-1
+    if "\ufffd" in text:
+        text = r.content.decode("latin-1", errors="replace")
+    return text
+
+
+def parse_date_ymd_slash(s: str) -> dt.date:
+    return dt.datetime.strptime(s, "%Y/%m/%d").date()
+
+
+def to_float_maybe(x: str) -> Optional[float]:
+    if x is None:
+        return None
+    s = str(x).strip().replace("\xa0", " ")
+    if not s:
+        return None
+    s = s.replace("*", "").strip()
+    s = s.replace(",", ".")
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def parse_qtxt_daily(text: str, station_filter: str) -> List[Tuple[dt.date, float, str]]:
+    rows: List[Tuple[dt.date, float, str]] = []
+    for line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        m = DATA_RE.match(line)
+        if not m:
+            continue
+        st = m.group("station")
+        if st != station_filter:
+            continue
+        d = parse_date_ymd_slash(m.group("date"))
+        q = to_float_maybe(m.group("q"))
+        if q is None:
+            continue
+        remark = (m.group("remark") or "").strip()
+        rows.append((d, q, remark))
+    rows.sort(key=lambda x: x[0])
+    return rows
+
+
+def filter_range_q(rows: List[Tuple[dt.date, float, str]], start: dt.date, end: dt.date) -> List[Tuple[dt.date, float, str]]:
+    return [(d, q, r) for (d, q, r) in rows if start <= d <= end]
+
+
+def dedupe_daily_q(rows: List[Tuple[dt.date, float, str]]) -> List[Tuple[dt.date, float, str]]:
+    sums: Dict[dt.date, float] = defaultdict(float)
+    counts: Dict[dt.date, int] = defaultdict(int)
+    remarks: Dict[dt.date, set[str]] = defaultdict(set)
+
+    for d, q, r in rows:
+        sums[d] += q
+        counts[d] += 1
+        if r:
+            remarks[d].add(r)
+
+    out: List[Tuple[dt.date, float, str]] = []
+    for d in sorted(counts.keys()):
+        avg = sums[d] / counts[d]
+        rem = " ".join(sorted(remarks[d])) if remarks[d] else ""
+        out.append((d, avg, rem))
+    return out
+
+
+def fetch_cehq_daily_discharge(station: str, start: dt.date, end: dt.date) -> Dict[str, Tuple[float, str]]:
+    url = CEHQ_QTXT_URL.format(station=station)
+    print(f"[download] {url}")
+    text = fetch_text(url)
+
+    rows = parse_qtxt_daily(text, station_filter=station)
+    if not rows:
+        raise SystemExit(
+            "No discharge rows parsed from CEHQ Q.txt.\n"
+            "Tip: open the URL in a browser and confirm data lines look like: 052219 1970/01/01 9.400 R"
+        )
+
+    rows = filter_range_q(rows, start, end)
+    if not rows:
+        raise SystemExit("Parsed CEHQ Q.txt, but no rows fall inside the requested date range.")
+
+    rows = dedupe_daily_q(rows)
+
+    out: Dict[str, Tuple[float, str]] = {}
+    for d, q, r in rows:
+        out[d.isoformat()] = (q, r)
+    return out
+
+
+# -----------------------------
+# FIRESTORE WRITE
+# -----------------------------
+def chunk_list(xs: List[str], n: int) -> List[List[str]]:
+    return [xs[i : i + n] for i in range(0, len(xs), n)]
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description="Backfill daily mean temp (MSC) + daily discharge (CEHQ) into Firestore.")
+    ap.add_argument("--station-doc", default="lassomption", help="Firestore station document id (default: lassomption)")
+    ap.add_argument("--cehq-station", default="052219", help="CEHQ station id used in *_Q.txt (default: 052219)")
+
+    ap.add_argument("--lat", type=float, default=45.81)
+    ap.add_argument("--lon", type=float, default=-73.43)
+    ap.add_argument("--radius-km", type=float, default=250.0)
+    ap.add_argument("--try-n", type=int, default=25)
+    ap.add_argument("--min-days", type=int, default=30)
+
+    ap.add_argument("--start", default="2025-10-15")
+    ap.add_argument("--end", default="2026-02-08")
+
+    ap.add_argument("--dry-run", action="store_true", help="Fetch/compute but do not write to Firestore")
+    ap.add_argument("--chunk-days", type=int, default=150, help="Write in chunks of N days (default 150)")
+    args = ap.parse_args()
+
+    start = parse_date_iso(args.start)
+    end = parse_date_iso(args.end)
+    if end < start:
+        raise SystemExit("--end must be >= --start")
+
+    season_id = get_season_id(start)  # for this range it's one season
+    now_qc = dt.datetime.now(TZ_QC).isoformat()
+
+    # 1) Pick best climate station for coverage
+    stations = fetch_candidate_stations(args.lat, args.lon, args.radius_km, province_code="QC")
+    if not stations:
+        raise SystemExit("No climate stations found. Increase --radius-km.")
+
+    best = None
+    best_count = -1
+    best_feats: List[Dict[str, Any]] = []
+
+    expected_days = (end - start).days + 1
+    for st in stations[: max(1, args.try_n)]:
+        feats = fetch_climate_daily(st["climate_id"], start, end)
+        mean_by_date, _ = build_temp_maps(feats)
+        n = len(mean_by_date)
+        if n > best_count:
+            best = st
+            best_count = n
+            best_feats = feats
+        if n >= expected_days:
+            break
+
+    if best is None or best_count < args.min_days:
+        raise SystemExit(
+            f"Tried {min(args.try_n, len(stations))} stations within {args.radius_km} km, "
+            f"but best returned only {best_count} days. Increase --radius-km or widen try-n."
+        )
+
+    mean_by_date, flag_by_date = build_temp_maps(best_feats)
+    djgc_by_date = compute_djgc_over_range(mean_by_date)
+
+    print("\n=== Temperature source (MSC climate-daily) ===")
+    print(f"Station:   {best['name']}")
+    print(f"ClimateID: {best['climate_id']}")
+    print(f"Distance:  {best['distance_km']:.2f} km")
+    print(f"Coverage:  {best_count}/{expected_days} days")
+
+    # 2) Fetch discharge from CEHQ Q.txt
+    q_by_date = fetch_cehq_daily_discharge(args.cehq_station, start, end)
+    print("\n=== Discharge source (CEHQ Q.txt) ===")
+    print(f"Station:   {args.cehq_station}")
+    print(f"Coverage:  {len(q_by_date)}/{expected_days} days")
+
+    # Build the DJGC / Discharge points array
+    all_dates = [d.isoformat() for d in date_range(start, end)]
+    points = []
+
+    for ds in all_dates:
+        djgc = djgc_by_date.get(ds)
+        q_tuple = q_by_date.get(ds)
+        
+        # Only keep days where both DJGC and Q exist
+        if djgc is not None and q_tuple is not None:
+            q_val = q_tuple[0]
+            if q_val is not None:
+                points.append({
+                    "djgc": round(float(djgc), 3),
+                    "q": round(float(q_val), 3)
+                })
+
+    updates = {
+        "djgc_q_points": points
     }
-    
-    print(f"Fetching SWOB Temps from {url} with params {params}...")
-    try:
-        r = requests.get(url, params=params, timeout=30)
-        r.raise_for_status()
-        data = r.json()
-        
-        # Aggregation
-        daily_stats = {} # { 'YYYY-MM-DD': [temp1, temp2...] }
-        
-        for feature in data.get('features', []):
-            props = feature.get('properties', {})
-            dt_str = props.get('date_tm') # e.g., "2025-01-22T12:00:00Z"
-            val = props.get('air_temp')
-            
-            if not dt_str or val is None:
-                continue
-                
-            # Convert to local date (QC) for correct daily assignment
-            dt_utc = datetime.datetime.strptime(dt_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=pytz.UTC)
-            dt_qc = dt_utc.astimezone(TZ_QC)
-            d_str = dt_qc.strftime('%Y-%m-%d')
-            
-            if d_str not in daily_stats:
-                daily_stats[d_str] = []
-            daily_stats[d_str].append(float(val))
-            
-        # Compute Min/Max
-        result = {}
-        for d_str, temps in daily_stats.items():
-            if temps:
-                result[d_str] = {
-                    'temp_max': max(temps),
-                    'temp_min': min(temps) # Tmin(day) -> approx Low for DJ
-                }
-        return result
-        
-    except Exception as e:
-        print(f"Error fetching SWOB: {e}")
-        return {}
 
-def fetch_hydrometric_realtime(station_number, start_date, end_date):
-    """
-    Fetches observed Q from hydrometric-realtime.
-    Returns: dict { 'YYYY-MM-DD': float (daily mean or latest valid) }
-    """
-    collection = "hydrometric-realtime"
-    url = f"{MSC_API_URL}/collections/{collection}/items"
-    params = {
-        'STATION_NUMBER': station_number,
-        'datetime': f"{start_date}T00:00:00/{end_date}T23:59:59",
-        'limit': 10000,
-        'properties': 'date,discharge' # Check actual property name, usually 'discharge' or 'value'
-    }
-    
-    print(f"Fetching Hydrometric from {url}...")
-    try:
-        r = requests.get(url, params=params, timeout=30)
-        r.raise_for_status()
-        data = r.json()
-        
-        daily_q = {}
-        
-        for feature in data.get('features', []):
-            props = feature['properties']
-            val = props.get('discharge') or props.get('value') # Fallback
-            dt_str = props.get('date') # e.g. "2025-01-22T10:00:00Z"
-            
-            if val is None: continue
-            
-            # Localizing mainly important if near midnight, but for daily mean,
-            # hydrometric is often already daily or we average raw.
-            # Assuming raw instantaneous -> average for daily Q?
-            # Or is this daily data? "hydrometric-realtime" is usually 5-15min data.
-            # We should Average it.
-            
-            dt_utc = datetime.datetime.strptime(dt_str.replace("Z", "+0000"), "%Y-%m-%dT%H:%M:%S%z")
-            dt_qc = dt_utc.astimezone(TZ_QC)
-            d_str = dt_qc.strftime('%Y-%m-%d')
-            
-            if d_str not in daily_q:
-                daily_q[d_str] = []
-            daily_q[d_str].append(float(val))
-            
-        result = {}
-        for d, vals in daily_q.items():
-            if vals:
-                result[d] = sum(vals) / len(vals) # Daily Mean
-        return result
-        
-    except Exception as e:
-        print(f"Error fetching Hydrometric: {e}")
-        return {}
+    print("\n=== Firestore target ===")
+    print(f"stations/{args.station_doc}/seasons/{season_id}")
+    print(f"Total valid DJGC vs Q points: {len(points)}")
+    print(f"Dry-run: {args.dry_run}")
 
-def fetch_citypage_forecast(city_id):
-    """
-    Fetches 7-day forecast from citypageweather-realtime.
-    Returns: dict { 'YYYY-MM-DD': { 'temp_max': float, 'temp_min': float } }
-    """
-    collection = "citypageweather-realtime"
-    url = f"{MSC_API_URL}/collections/{collection}/items"
-    # We want the latest forecast for the city
-    # Usually query by 'city' or 'location' params?
-    # Actually CityPage objects are geospatial. We might need to filter by ID if property exists?
-    # Or just use the standard XML if this API is experimental/complex.
-    # The user request mentioned: "/collections/citypageweather-realtime?lang=en"
-    # Let's try to query by ID if possible, or fallback to known robust XML URL if OGC is tricky.
-    
-    # PLAN B: Use the reliable XML link the user provided/implied is okay, 
-    # BUT the prompt asked to use OGC API consistent with msc-pygeoapi.
-    # We will try to filter by a property ID if possible.
-    # CityPage OGC items usually have `msc_id` or similar.
-    params = {
-        'limit': 15, # Just need one main forecast object usually, but it returns periods?
-        # If it returns periods as items:
-        'city': city_id, # Hypothetical, might need bbox
-    }
-    
-    # NOTE: Since CityPage OGC structure is complex and "experimental", 
-    # and to ensure this script WORKS without much trial/error on unique API keys,
-    # I will parse the XML source which is the BACKEND for that OGC API usually. 
-    # User said "Use GeoMet... City Page Weather...". 
-    # Let's try to fetch OGC items but if it fails/is empty, be safe.
-    # Actually, let's implement the standard XML fetcher as it mimics the data structure needed perfectly
-    # and is provided by ECCC widely. 
-    # Wait, user explicitly asked "Why msc-pygeoapi is ideal...". I must use pygeoapi if I can.
-    
-    # We will assume `items` gives us forecast periods for the city if we filter correctly.
-    # If not easy, we use the existing XML logic but label it as requested.
-    # Let's stick to the prompt's XML `fetch_eccc_temperatures` logic but cleaned up
-    # because `swob` is for OBSERVATIONS.
-    # Forecasts via OGC might be tricky without exact lat/long or bbox.
-    
-    # FALLBACK: Use XML for forecasts. It's stable.
-    url_xml = f"https://dd.weather.gc.ca/citypage_weather/xml/QC/{city_id}_e.xml"
-    print(f"Fetching Forecast from {url_xml}...")
-    try:
-        r = requests.get(url_xml, timeout=10)
-        from xml.etree import ElementTree
-        tree = ElementTree.fromstring(r.content)
-        
-        daily = {}
-        # Naive parse for "Next Days"
-        # We need to align "Monday" to dates. This is the hard part of XML.
-        # Let's assume the script runs TODAY.
-        current_dt = get_now_qc()
-        
-        # We can map text names to offsets?
-        # Or Just grab the simple "High/Low" pairs blindly and assign to T+1, T+2...?
-        
-        # New approach: Inspect <timeStamp> in the XML?
-        # Let's accept that for a daily script, we want the next 7 days.
-        # We will parse the logic simply:
-        # Find first "Today" or "Tonight" -> T0
-        # Then pairs of days follow.
-        
-        # For this implementation, to guarantee robustness:
-        # We will map the XML order to T0, T1, T2...
-        
-        idx = 0
-        mapping = {}
-        visited_dates = set()
-        
-        # Get issued time to anchor
-        dt_stamp = tree.find(".//dateTime[@zone='UTC']/timeStamp")
-        if dt_stamp is not None:
-             # 20250123050000 roughly
-             # Parse it if critical
-             pass
-             
-        # Iterate Period textForecastName
-        # logic: if "Night" -> belongs to date of "Day"? Or previous?
-        # Usually: "Monday" (High), "Monday night" (Low).
-        
-        # We'll just collect Highs and Lows and merge by Day index
-        
-        # Simplified:
-        # [ { name: "Today", value: -5, type: high/low? }, ... ]
-        
-        pass # Actual XML logic is verbose.
-        
-    except:
-        pass
-    
-    # RETURNING MOCK/STUB for implementation plan consistency if XML is too heavy?
-    # No, I should provide working code.
-    # I will stick to the existing XML parser logic from the original file but improved,
-    # OR if the user strictly wants Pygeoapi for forecast, I'd need the exact collection ID.
-    # "citypageweather-realtime" IS the collection.
-    # Let's try to fetch it as JSON.
-    
-    url_json = f"{MSC_API_URL}/collections/citypageweather-realtime/items?lang=en&limit=1&f=json" 
-    # We need to filter by location. 
-    # For now, I will keep the XML fetcher for FORECASTS as it is a specific ECCC product 
-    # and the OGC wrapper is just wrapping it. 
-    # I will rename the function to be generic.
-    
-    return fetch_xml_forecast_legacy(city_id)
+    if args.dry_run:
+        print("Dry-run enabled: not writing anything.")
+        # If dry run, let's print the last few points just to verify the structure
+        print("Sample points:", json.dumps(points[-5:], indent=2))
+        return
 
-def fetch_xml_forecast_legacy(city_id):
-    url = f"https://dd.weather.gc.ca/citypage_weather/xml/QC/{city_id}_e.xml"
-    try:
-        r = requests.get(url, timeout=10)
-        from xml.etree import ElementTree
-        tree = ElementTree.fromstring(r.content)
-        
-        result = {}
-        # Basic parsing logic
-        # 1. Determine "Day 0" date
-        now = get_now_qc()
-        
-        # 2. Iterate forecasts
-        # We'll approximate: Today=0, Tomorrow=1...
-        # We look for <temperature class="high"> and <temperature class="low">
-        
-        # Group by forecast period is tricky.
-        # Let's ignore text headers and count 12h blocks?
-        
-        # Better: use the textSummary?
-        # Most robust for partial script: 
-        # Just grab the sequence of Highs and Lows.
-        
-        highs = []
-        lows = []
-        
-        for f in tree.findall(".//forecastGroup/forecast"):
-            temps = f.findall(".//temperatures/temperature")
-            for t in temps:
-                cls = t.get("class")
-                val = float(t.text)
-                if cls == "high": highs.append(val)
-                if cls == "low": lows.append(val)
-        
-        # Pair them up
-        # Today might miss High if it's evening.
-        # We align to dates carefully.
-        
-        curr = now
-        for i in range(len(highs)): # 5-7 days
-            d_str = (curr + datetime.timedelta(days=i)).strftime('%Y-%m-%d')
-            h = highs[i]
-            l = lows[i] if i < len(lows) else h - 5 # Fallback
-            result[d_str] = { 'temp_max': h, 'temp_min': l }
-            
-        return result
-    except Exception as e:
-        print(f"XML Forecast Error: {e}")
-        return {}
-
-
-# --- LOGIC ---
-
-def fetch_cehq_forecast_q(station_id):
-    """
-    Fetch JSON forecast from CEHQ (Legacy/Fallback until OGC collection is ready).
-    """
-    url = f"https://www.cehq.gouv.qc.ca/depot/suivihydro/bd/JSON/{station_id}.json"
-    print(f"Fetching Forecast Q from {url}...")
-    try:
-        r = requests.get(url, timeout=10)
-        data = r.json()
-        return data.get('prevision', [])
-    except Exception as e:
-        print(f"Error fetching Q forecast: {e}")
-        return []
-
-
-def compute_indices(phase, dj_yesterday, t_avg_today):
-    """
-    Returns new DJ value.
-    DJGC: Freeze (Start Oct 15). Accumulate negative, melt if positive.
-    DJDC-5: Thaw (Start Feb 15). Accumulate positive (Base 0?), re-freeze if negative?
-             Usually "Thawing Degree Days" is sum(max(Ta, 0)). Simple accumulation.
-             Or is it "Cote's Index" (DJDC)?
-             User said: "DJDC-5 starting Feb 15".
-             Commonly: Start at 0 on Feb 15. Add (T_avg - (-5))? Or Base 0?
-             "DJDC-5" notation suggests Base -5 ?? Or maybe Base 0?
-             Let's assume standard Thaw Base 0 for now as it's safe.
-             Or Base 0, subtract if cold?
-    """
-    dj = dj_yesterday
-    
-    if phase == "DJGC":
-        # Freezing Degree Days (Accumulates Cold)
-        # If T < 0 -> Add abs(T)
-        # If T > 0 -> Subtract T (min 0)
-        if t_avg_today < 0:
-            dj += abs(t_avg_today)
-        else:
-            dj = max(0, dj - t_avg_today)
-            
-    elif phase == "DJDC-5":
-        # Thawing Degree Days (Accumulates Warmth)
-        # Start Feb 15.
-        # If T > 0 -> Add T
-        # If T < 0 -> Subtract abs(T)? Or just stop?
-        # Commonly "Net Thaw": Add T_avg.
-        # Let's implement Net Thaw.
-        dj += t_avg_today 
-        # (Note: This can go negative if we strictly follow net. But usually starts at 0 and grows).
-        if dj < 0: dj = 0
-        
-    else:
-        # OPEN_WATER or other
-        dj = 0
-
-    return dj
-
-def get_phase_for_date(date_obj):
-    """
-    Returns 'DJGC', 'DJDC-5', or 'OPEN_WATER' based on user rules:
-    - DJGC: Oct 15 to Feb 14
-    - DJDC-5: Feb 15 to May 15
-    """
-    m = date_obj.month
-    d = date_obj.day
-    md = m * 100 + d
-    
-    # Oct 15 (1015) to Dec 31 (1231) OR Jan 1 (101) to Feb 14 (214)
-    if md >= 1015 or md < 215:
-        return "DJGC"
-    # Feb 15 (215) to May 15 (515)
-    elif 215 <= md <= 515:
-        return "DJDC-5"
-    else:
-        return "OPEN_WATER"
-
-def get_db_state(db, station_id, season_id):
-    ref = db.collection('stations').document(station_id).collection('seasons').document(season_id)
-    doc = ref.get()
-    if doc.exists:
-        return doc.to_dict()
-    return None
-
-def main():
     db = init_firebase()
-    
-    # 1. SETUP TIME
-    now_qc = get_now_qc()
-    today_str = get_today_qc_str()
-    season_id = get_season_id(now_qc)
-    
-    print(f"=== Poll Daily Start: {today_str} (Season {season_id}) ===")
-    
-    # 2. GET PREVIOUS STATE
-    station_doc_id = "lassomption" # Firestore ID
-    current_state = get_db_state(db, station_doc_id, season_id)
-    
-    # Determine "Missing Window"
-    # Find the last date we have 'observed' data for.
-    last_obs_date_str = None
-    if current_state and 'observed' in current_state:
-        # Get max key
-        dates = sorted(current_state['observed'].keys())
-        if dates:
-            last_obs_date_str = dates[-1]
-    
-    # Define start date for processing
-    # If no data, start from Season Start (Oct 15) or arbitrary recent backup?
-    # Let's default to "Today" if brand new, or "Last + 1" if exists.
-    
-    start_dt = now_qc
-    if last_obs_date_str:
-        last_dt = datetime.datetime.strptime(last_obs_date_str, "%Y-%m-%d").replace(tzinfo=TZ_QC)
-        start_dt = last_dt + datetime.timedelta(days=1)
-        
-    # Cap start date to logical bounds (don't backfill 10 years)
-    today_dt = datetime.datetime.strptime(today_str, "%Y-%m-%d").replace(tzinfo=TZ_QC)
-    
-    if start_dt > today_dt:
-        print("Data up to date. Nothing to process for observed.")
-        # We still might want to update FORECASTS though!
-        process_days = [today_dt] 
-        # Actually if we have observed for today already, we might be re-running. 
-        # Safe to re-run 'today'.
-        start_dt = today_dt
-    
-    # Generate list of days to process (inclusive of Today)
-    days_to_process = []
-    curr = start_dt
-    while curr <= today_dt:
-        days_to_process.append(curr)
-        curr += datetime.timedelta(days=1)
-        
-    print(f"Processing window: {[d.strftime('%Y-%m-%d') for d in days_to_process]}")
-    
-    # 3. FETCH DATA BATCHES
-    # Optimization: Fetch all needed data in one go for the window
-    win_start_str = days_to_process[0].strftime('%Y-%m-%d')
-    win_end_str = days_to_process[-1].strftime('%Y-%m-%d')
-    
-    # Fetch Observed T (SWOB)
-    # We need "Yesterday" Tmin for the first day's Avg calc?
-    # fetch extra day before
-    fetch_start = win_start_str # Optimally -1 day
-    obs_temps = fetch_swob_temperatures(SWOB_STATION_CODE, fetch_start, win_end_str)
-    
-    # Fetch Observed Q
-    obs_q = fetch_hydrometric_realtime(STATION_ID, win_start_str, win_end_str)
-    
-    # Fetch Forecast T (for predictions starting from Today+1)
-    forecast_temps = fetch_citypage_forecast(ECCC_CITY_ID)
+    ref = db.collection("stations").document(args.station_doc).collection("seasons").document(season_id)
 
-    # Fetch Forecast Q (CEHQ)
-    forecast_q_raw = fetch_cehq_forecast_q(STATION_ID)
-    
-    # 4. PROCESS LOOP
-    # We need to maintain running DJ state.
-    # Initialize from DB "last known" or 0
-    
-    # Recover DJ from last_obs_date if available
-    running_dj = 0
-    running_phase = "DJGC"
-    
-    if last_obs_date_str and current_state:
-        last_entry = current_state['observed'].get(last_obs_date_str, {})
-        running_dj = last_entry.get('dj', 0)
-        running_phase = last_entry.get('phase', "DJGC") # Carry over phase
-        
-        # Determine Phase Switch
-        # If we cross Feb 15 in this window, we switch?
-        # Simple Logic: Check date of processing.
-        
-    # Also need 'previous night low' for T_avg
-    # If continuous, it's (Previous Day Min).
-    # From DB 'pending'?
-    prev_low = -5.0
-    if current_state and 'pending' in current_state:
-        prev_low = current_state['pending'].get('lowPrevNight', -5.0)
-        
-    updates_buffer = {}
-    
-    for day_obj in days_to_process:
-        d_str = day_obj.strftime('%Y-%m-%d')
-        
-        # Check Phase
-        # Use centralized logic
-        new_phase = get_phase_for_date(day_obj)
-        
-        # Reset Logic at boundaries
-        if new_phase != running_phase:
-             # If switching INTO DJDC-5 (Feb 15 start), reset DJ to 0
-             if new_phase == "DJDC-5":
-                 running_dj = 0
-             # If switching into Open Water, reset?
-             elif new_phase == "OPEN_WATER":
-                 running_dj = 0
-             # If switching into DJGC (Oct 15), usually handled by new Season ID, 
-             # but if this script runs across that boundary for some reason:
-             elif new_phase == "DJGC" and running_phase == "OPEN_WATER":
-                 running_dj = 0
-                 
-        running_phase = new_phase
-             
-        # Get Data
-        t_data = obs_temps.get(d_str, {})
-        q_val = obs_q.get(d_str, 0.0) # Default 0 if missing
-        
-        # T Avg
-        # (Max(Today) + Min(Today? Or Yesterday?)) / 2
-        # User rule: "Avg(D) = (High(D) + LowNight(D-1)) / 2"
-        # We need LowNight(D-1).
-        # In our loop, `prev_low` holds this.
-        
-        t_high = t_data.get('temp_max', -5.0)
-        t_min_today = t_data.get('temp_min', -5.0) # Will become next prev_low
-        
-        t_avg = (t_high + prev_low) / 2.0
-        
-        # Compute DJ
-        running_dj = compute_indices(running_phase, running_dj, t_avg)
-        
-        # Store
-        updates_buffer[f"observed.{d_str}"] = {
-            "phase": running_phase,
-            "dj": round(running_dj, 1),
-            "q": round(q_val, 2),
-            "ts_qc": day_obj.isoformat()
-            # "t_avg": t_avg # Debug
-        }
-        
-        # Cycle
-        prev_low = t_min_today
-        
-    # 5. FORECAST / PREDICTION PHASE
-    # From "Tomorrow" onwards (relative to Today of execution)
-    pred_start = today_dt + datetime.timedelta(days=1)
-    pred_vals = {}
-    
-    # We continue `running_dj` and `prev_low` (which is now Tmin of Today)
-    curr_pred_dj = running_dj
-    curr_pred_phase = running_phase
-    curr_prev_low = prev_low 
-    # NOTE: If loop above didn't run (data up to date), we need to ensure local vars are fresh from DB?
-    # Yes. But `days_to_process` included Today, so vars are fresh.
-    
-    for i in range(1, 8):
-        f_date = today_dt + datetime.timedelta(days=i)
-        f_str = f_date.strftime('%Y-%m-%d')
-        
-        # Forecast T
-        ft_data = forecast_temps.get(f_str, {'temp_max': -5.0, 'temp_min': -10.0})
-        f_max = ft_data.get('temp_max', -5.0)
-        f_min = ft_data.get('temp_min', -10.0)
-        
-        f_avg = (f_max + curr_prev_low) / 2.0
-        
-        # Phase check
-        new_p_phase = get_phase_for_date(f_date)
-        if new_p_phase != curr_pred_phase:
-             if new_p_phase == "DJDC-5": curr_pred_dj = 0
-             elif new_p_phase == "OPEN_WATER": curr_pred_dj = 0
-             curr_pred_phase = new_p_phase
-        
-        curr_pred_dj = compute_indices(curr_pred_phase, curr_pred_dj, f_avg)
-        
+    # We can just write the entire object at once
+    ref.set(updates, merge=True)
+    print(f"Committed {len(points)} DJGC vs Q pairs to Firestore.")
 
-        # Forecast Q
-        # Find matching date in CEHQ JSON
-        # CEHQ datePrevision format: "YYYY-MM-DD HH:MM:SS" or similar
-        found_q = next((item for item in forecast_q_raw if item.get('datePrevision', '').startswith(f_str)), None)
-        q_val_pred = float(found_q['qMCS']) if found_q else 0
-        
-        pred_vals[f_str] = {
-            'dj': round(curr_pred_dj, 1),
-            'q': q_val_pred, 
-            'phase': curr_pred_phase
-        }
-        
-        curr_prev_low = f_min
-        
-    # 6. COMMIT
-    batch = db.batch()
-    ref = db.collection('stations').document(station_doc_id).collection('seasons').document(season_id)
-    
-    final_update = updates_buffer
-    final_update["prediction"] = {
-        "issued_ts_qc": now_qc.isoformat(),
-        "values": pred_vals
-    }
-    final_update["pending"] = {
-        "lowPrevNight": prev_low,
-        "ts_qc": now_qc.isoformat()
-    }
-    
-    # Construct Set/Merge
-    # Firestore `update` fails if doc doesn't exist. Use `set(..., merge=True)`
-    
-    print(f"Committing {len(updates_buffer)} observed days + predictions...")
-    ref.set(final_update, merge=True) 
     print("Done.")
+
 
 if __name__ == "__main__":
     main()

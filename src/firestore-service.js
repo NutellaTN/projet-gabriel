@@ -45,29 +45,28 @@ export function subscribeToSeasonData(stationId, onData) {
 }
 
 function processSeasonData(data, callback) {
-    // 1. Parse Observed
-    const obsMap = data.observed || {};
-    const latestKey = data.latestObservedKey;
-
+    // 1. Parse DJGC vs Q Points Array
+    const pointsArray = data.djgc_q_points || [];
+    
     const historical = [];
     let latest = null;
 
-    Object.keys(obsMap).forEach(dateKey => {
-        const item = obsMap[dateKey];
-        // Ensure numbers
+    pointsArray.forEach((ptData, index) => {
         const pt = {
-            date: dateKey,
-            dj: item.dj,
-            q: item.q,
-            phase: item.phase
+            dj: ptData.djgc,
+            q: ptData.q,
+            phase: "DJGC" // We only have DJGC now
         };
-
-        if (dateKey === latestKey) {
+        
+        // Treat the last point as 'latest' for styling purposes
+        if (index === pointsArray.length - 1) {
             latest = pt;
         } else {
             historical.push(pt);
         }
     });
+
+
 
     // 2. Parse Prediction
     const predData = data.prediction || {};
