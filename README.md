@@ -14,7 +14,7 @@ This project is a real-time monitoring tool for river ice breakup, visualizing t
     - **`data-import.js`**: Legacy utilities for local CSV processing (now largely superseded by Firestore data for real-time views).
     - **`firebase-config.js`**: Configuration for Firebase Analytics and Firestore.
 - **`scripts/`**: Backend Python scripts for data fetching and processing.
-    - **`poll_daily.py`**: The core data pipeline. Fetches weather data (ECCC/Open-Meteo) and discharge data (CEHQ), calculates thermal indices, forecasts future values, and updates Firestore.
+    - **`poll_daily.py`**: The core data pipeline. Fetches weather data (MSC climate-daily) and discharge data (CEHQ), calculates the DJGC thermal index, and updates Firestore with the `djgc_q_points` array.
 - **`.github/workflows/`**: CI/CD automation.
     - **`poll_daily.yml`**: GitHub Action that runs `poll_daily.py` every day at 16:00 UTC to keep the data fresh.
 
@@ -71,7 +71,6 @@ If you wish to run the data fetching scripts locally:
 1.  **Environment Variables**:
     You must set the following environment variables (or provided in a `.env` file or `service-account.json` for local use):
     - `FIREBASE_SA_JSON_B64`: Base64 encoded Service Account JSON for Firebase Admin SDK.
-    - `ECCC_CITY_ID`: City ID for Environment Canada weather data (default: `s0000635`).
 
 2.  **Install Python Dependencies**:
     ```bash
@@ -87,12 +86,12 @@ If you wish to run the data fetching scripts locally:
 
 The system operates on a **Serverless-Data-Push** model:
 
-1.  **Ingestion**: The `poll_daily.py` script runs automatically via GitHub Actions.
+1.  **Ingestion**: The `poll_daily.py` script can run automatically to backfill or update data.
 2.  **Processing**: It fetches:
-    - **Weather**: ECCC Datamart / Open-Meteo API.
-    - **Discharge**: CEHQ (Quebec Hydrology).
-    - Calculates the **DJGC** and **DJDC-5** indices based on the active season rules (see Algorithms below).
-3.  **Storage**: Processed data (Historical series + 7-day Prediction) is stored in **Firebase Firestore** under `stations/{stationId}/seasons/{seasonId}`.
+    - **Weather**: MSC climate-daily API.
+    - **Discharge**: CEHQ (Quebec Hydrology) Q.txt files.
+    - Calculates the **DJGC** index based on the active season rules (see Algorithms below).
+3.  **Storage**: Processed data (Continuous array of `{djgc, q}` points) is stored in **Firebase Firestore** under `stations/{stationId}/seasons/{seasonId}` as `djgc_q_points`.
 4.  **Presentation**: The frontend subscribes to this Firestore document. Updates are pushed instantly to connected clients.
 
 ## Configuration
