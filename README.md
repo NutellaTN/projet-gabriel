@@ -52,36 +52,6 @@ Both panels include:
 - **Control Points**: Draggable vertices that define the boundaries between zones (when enabled).
 - **Historical Data**: Real-time or historical series plotted as a line.
 
-## Getting Started
-
-1.  Install dependencies:
-    ```bash
-    npm install
-    ```
-2.  Run the development server:
-    ```bash
-    npm run dev
-    ```
-3.  Open the local URL (usually `http://localhost:5173`).
-
-### Backend Setup (Optional)
-
-If you wish to run the data fetching scripts locally:
-
-1.  **Environment Variables**:
-    You must set the following environment variables (or provided in a `.env` file or `service-account.json` for local use):
-    - `FIREBASE_SA_JSON_B64`: Base64 encoded Service Account JSON for Firebase Admin SDK.
-
-2.  **Install Python Dependencies**:
-    ```bash
-    pip install -r requirements.txt
-    ```
-
-3.  **Run the Poll Script**:
-    ```bash
-    python scripts/poll_daily.py
-    ```
-
 ## Data Architecture
 
 The system operates on a **Serverless-Data-Push** model:
