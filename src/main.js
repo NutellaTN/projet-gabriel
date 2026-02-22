@@ -114,6 +114,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById("runPollBtn").addEventListener("click", async () => {
         const statusEl = document.getElementById("pollStatus");
         const btn = document.getElementById("runPollBtn");
+        const progressEl = document.getElementById("pollProgress");
 
         // GitHub repo config (hard-coded — not a secret)
         const OWNER = "NutellaTN";
@@ -129,35 +130,77 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         btn.disabled = true;
+        progressEl.style.display = "block";
         statusEl.style.color = "#94a3b8";
         statusEl.textContent = "Dispatching…";
 
+        const headers = {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        };
+
         try {
-            const res = await fetch(
+            // 1. Dispatch the workflow
+            const dispatchRes = await fetch(
                 `https://api.github.com/repos/${OWNER}/${REPO}/actions/workflows/${WORKFLOW}/dispatches`,
-                {
-                    method: "POST",
-                    headers: {
-                        Authorization: `Bearer ${token}`,
-                        Accept: "application/vnd.github+json",
-                        "X-GitHub-Api-Version": "2022-11-28",
-                    },
-                    body: JSON.stringify({ ref: "main" }),
-                }
+                { method: "POST", headers, body: JSON.stringify({ ref: "main" }) }
             );
-            if (res.status === 204) {
-                statusEl.style.color = "#4ade80";
-                statusEl.textContent = "✓ Running on GitHub Actions!";
-            } else {
-                const body = await res.json().catch(() => ({}));
-                statusEl.style.color = "#f87171";
-                statusEl.textContent = `✗ ${res.status}: ${body.message || "Unknown error"}`;
+
+            if (dispatchRes.status !== 204) {
+                const body = await dispatchRes.json().catch(() => ({}));
+                throw new Error(`Dispatch failed: ${dispatchRes.status} ${body.message || ""}`);
             }
+
+            statusEl.textContent = "Starting run (locating job)…";
+            // Wait 2 seconds for GitHub to register the run
+            await new Promise((r) => setTimeout(r, 2000));
+
+            // 2. Find the newly created run
+            const runsRes = await fetch(
+                `https://api.github.com/repos/${OWNER}/${REPO}/actions/workflows/${WORKFLOW}/runs?per_page=1`,
+                { headers }
+            );
+            const runsData = await runsRes.json();
+            const run = runsData.workflow_runs?.[0];
+
+            if (!run) {
+                throw new Error("Could not locate the workflow run.");
+            }
+
+            let runId = run.id;
+            let status = run.status;
+            let conclusion = run.conclusion;
+
+            // 3. Poll until completed
+            while (status !== "completed") {
+                statusEl.textContent = `Status: ${status.replace("_", " ")}…`;
+                await new Promise((r) => setTimeout(r, 5000)); // Poll every 5s
+
+                const pollRes = await fetch(
+                    `https://api.github.com/repos/${OWNER}/${REPO}/actions/runs/${runId}`,
+                    { headers }
+                );
+                const pollData = await pollRes.json();
+                status = pollData.status;
+                conclusion = pollData.conclusion;
+            }
+
+            // 4. Job finished
+            if (conclusion === "success") {
+                statusEl.style.color = "#4ade80";
+                statusEl.textContent = "✓ Poll Completed successfully!";
+            } else {
+                statusEl.style.color = "#f87171";
+                statusEl.textContent = `✗ Poll failed (${conclusion})`;
+            }
+
         } catch (err) {
             statusEl.style.color = "#f87171";
-            statusEl.textContent = `✗ Network error: ${err.message}`;
+            statusEl.textContent = `✗ Error: ${err.message}`;
         } finally {
             btn.disabled = false;
+            progressEl.style.display = "none";
         }
     });
 
