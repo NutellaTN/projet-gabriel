@@ -487,15 +487,28 @@ def _get_cehq_csv_via_playwright(station: str, headless: bool = True) -> str:
     }
     """
 
+    import time
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=headless)
         page = browser.new_page(user_agent=CEHQ_UA)
-        page.goto(url, wait_until="networkidle", timeout=180_000)
-        page.wait_for_function(
-            "window.Highcharts && Array.isArray(Highcharts.charts) && Highcharts.charts.filter(Boolean).length > 0",
-            timeout=120_000,
-        )
-        result = page.evaluate(EXTRACT_JS, {"needles": CEHQ_NEEDLES})
+        
+        result = {"ok": False}
+        max_retries = 3
+        for attempt in range(1, max_retries + 1):
+            try:
+                page.goto(url, wait_until="networkidle", timeout=120_000)
+                page.wait_for_function(
+                    "window.Highcharts && Array.isArray(Highcharts.charts) && Highcharts.charts.filter(Boolean).length > 0",
+                    timeout=90_000,
+                )
+                result = page.evaluate(EXTRACT_JS, {"needles": CEHQ_NEEDLES})
+                if result.get("ok"):
+                    break
+            except Exception as e:
+                print(f"[warning] CEHQ navigation/evaluation failed (Attempt {attempt}/{max_retries}): {e}")
+                if attempt < max_retries:
+                    time.sleep(10 * attempt)
+                    
         browser.close()
 
     if not result.get("ok"):
