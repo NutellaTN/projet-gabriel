@@ -209,15 +209,8 @@ button {
   border: var(--glass-border);
 }
 
-.btn-secondary:hover:not(:disabled) {
+.btn-secondary:hover {
   background: rgba(255, 255, 255, 0.1);
-}
-
-.btn-secondary:disabled {
-  background: rgba(255, 255, 255, 0.02);
-  color: rgba(255, 255, 255, 0.3);
-  cursor: not-allowed;
-  border-color: rgba(255, 255, 255, 0.05);
 }
 
 .btn-secondary.small {
