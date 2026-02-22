@@ -521,50 +521,31 @@ function renderChart(svgId, limits, data, showControlPoints, selectedPoint, onPo
         }
 
         if (pG) {
-            const validPreds = prediction.filter(d => !isNaN(d.dj) && !isNaN(d.q25) && !isNaN(d.q75) && d.q25 > 0 && d.q75 > 0);
+            // Area
+            const areaGen = d3.area()
+                .defined(d => !isNaN(d.dj) && !isNaN(d.q25) && !isNaN(d.q75) && d.q25 > 0 && d.q75 > 0)
+                .x(d => pX(d.dj))
+                .y0(d => y(d.q25))
+                .y1(d => y(d.q75));
 
-            if (validPreds.length > 0) {
-                const minDj = d3.min(validPreds, d => d.dj);
-                const maxDj = d3.max(validPreds, d => d.dj);
-                const minQ = d3.min(validPreds, d => d.q25);
-                const maxQ = d3.max(validPreds, d => d.q75);
+            pG.append("path")
+                .datum(prediction)
+                .attr("fill", "#3b82f6") // Blue-500
+                .attr("fill-opacity", 0.3)
+                .attr("d", areaGen);
 
-                const x0 = pX(minDj);
-                const x1 = pX(maxDj);
+            // Line (Median)
+            const lineGen = d3.line()
+                .defined(d => !isNaN(d.dj) && !isNaN(d.q) && d.q > 0)
+                .x(d => pX(d.dj))
+                .y(d => y(d.q));
 
-                // y-axis is inverted (0 is top)
-                const y0 = y(maxQ);
-                const y1 = y(minQ);
-
-                const width = Math.max(4, x1 - x0);
-                const height = Math.max(4, y1 - y0);
-
-                // Draw the prediction bounding shape (envelope)
-                pG.append("rect")
-                    .attr("x", x0)
-                    .attr("y", y0)
-                    .attr("width", width)
-                    .attr("height", height)
-                    .attr("fill", "#3b82f6") // Blue-500
-                    .attr("fill-opacity", 0.25)
-                    .attr("stroke", "#2563eb") // Blue-600
-                    .attr("stroke-width", 2)
-                    .attr("stroke-dasharray", "4,4")
-                    .attr("rx", 6); // Add rounded corners for a nice "shape" aesthetic
-
-                // Optional: Draw median points inside the envelope
-                const medianPoints = validPreds.filter(d => !isNaN(d.q) && d.q > 0);
-                pG.selectAll(".pred-dot")
-                    .data(medianPoints)
-                    .enter()
-                    .append("circle")
-                    .attr("class", "pred-dot")
-                    .attr("cx", d => pX(d.dj))
-                    .attr("cy", d => y(d.q))
-                    .attr("r", 3)
-                    .attr("fill", "#2563eb")
-                    .attr("fill-opacity", 0.6);
-            }
+            pG.append("path")
+                .datum(prediction)
+                .attr("fill", "none")
+                .attr("stroke", "#2563eb") // Blue-600
+                .attr("stroke-width", 2)
+                .attr("d", lineGen);
         }
     }
 
