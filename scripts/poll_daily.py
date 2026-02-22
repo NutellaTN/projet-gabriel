@@ -663,10 +663,13 @@ def main() -> None:
         print("Dry-run enabled: not writing anything.")
         return
 
+    # 1. Set historical/latest data (merges with existing)
     doc_ref.set(
-        {"djdc_q_points": final_points, "latest": latest_obj, "prediction": prediction_obj},
+        {"djdc_q_points": final_points, "latest": latest_obj},
         merge=True,
     )
+    # 2. Fully overwrite the prediction object to wipe out old prediction dates
+    doc_ref.update({"prediction": prediction_obj})
     print("Updates committed. Done.")
 
 
