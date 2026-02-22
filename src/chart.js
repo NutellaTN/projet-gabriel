@@ -239,6 +239,11 @@ function drawPanel(
     }
 
     // vertical grid (linear in DJ)
+    // Filter configured ticks to only those within the current domain (handles focus mode)
+    const [xDomMin, xDomMax] = x.domain();
+    const validXTicks = xTicks ? xTicks.filter(t => t >= xDomMin && t <= xDomMax) : [];
+    const effectiveXTicks = validXTicks.length > 0 ? validXTicks : x.ticks(6);
+
     const gxGrid = gClipped
         .append("g")
         .attr("class", "grid-x")
@@ -247,7 +252,7 @@ function drawPanel(
         .call(
             d3
                 .axisBottom(x)
-                .tickValues(xTicks || x.ticks(6))
+                .tickValues(effectiveXTicks)
                 .tickSize(-panelHeight)
                 .tickFormat("")
         );
@@ -257,7 +262,7 @@ function drawPanel(
     // X-axis (OUTSIDE CLIP)
     const xAxis = d3
         .axisBottom(x)
-        .tickValues(xTicks || [])
+        .tickValues(effectiveXTicks)
         .tickFormat(d3.format("~g"));
 
     g.append("g")
@@ -303,7 +308,7 @@ function renderChart(svgId, limits, data, showControlPoints, selectedPoint, onPo
     const svg = d3.select("#" + svgId);
     if (svg.empty()) return;
 
-    const { qMin, qMax, djgcMax, djdcMax, qBank } = limits;
+    const { qMin, qMax, djgcMin = 0, djgcMax, djdcMin = 0, djdcMax, qBank } = limits;
 
     // unpack data - might be old array format OR new object format
     let points = [];
@@ -379,10 +384,7 @@ function renderChart(svgId, limits, data, showControlPoints, selectedPoint, onPo
 
     // Left panel (DJGC)
     const gLeft = gRoot.append("g").attr("transform", "translate(0,0)");
-    const xDJGC = d3
-        .scaleLinear()
-        .domain([0, djgcMax])
-        .range([0, panelWidth]);
+    const xDJGC = d3.scaleLinear().domain([djgcMin, djgcMax]).range([0, panelWidth]);
 
     const gLeftClipped = drawPanel(
         gLeft,
@@ -404,10 +406,7 @@ function renderChart(svgId, limits, data, showControlPoints, selectedPoint, onPo
     const gRight = gRoot
         .append("g")
         .attr("transform", `translate(${panelWidth + midGap},0)`);
-    const xDJDC = d3
-        .scaleLinear()
-        .domain([0, djdcMax])
-        .range([0, panelWidth]);
+    const xDJDC = d3.scaleLinear().domain([djdcMin, djdcMax]).range([0, panelWidth]);
 
     const gRightClipped = drawPanel(
         gRight,
@@ -587,15 +586,58 @@ export function drawDiagram(selectedPoint, showControlPoints, onPointSelect, dat
     const riverKey = document.getElementById("riverSelect").value;
     const cfg = riverConfigs[riverKey];
 
-    // 1. Get Base Config Limits (for Overview)
-    const baseLimits = {
-        qMin: parseFloat(document.getElementById("qMin").value) || cfg.qMin,
-        qMax: parseFloat(document.getElementById("qMax").value) || cfg.qMax,
-        djgcMax: parseFloat(document.getElementById("djgcMax").value) || cfg.djgcMax,
-        djdcMax: parseFloat(document.getElementById("djdcMax").value) || cfg.djdcMax,
-        qBank: parseFloat(document.getElementById("qBankfull").value) || cfg.qBankfull
+    const configQMin = parseFloat(document.getElementById("qMin").value) || cfg.qMin;
+    const configQMax = parseFloat(document.getElementById("qMax").value) || cfg.qMax;
+    const configDJGCMax = parseFloat(document.getElementById("djgcMax").value) || cfg.djgcMax;
+    const configDJDCMax = parseFloat(document.getElementById("djdcMax").value) || cfg.djdcMax;
+    const configQBank = parseFloat(document.getElementById("qBankfull").value) || cfg.qBankfull;
+
+    let limits = {
+        qMin: configQMin, qMax: configQMax,
+        djgcMin: 0, djgcMax: configDJGCMax,
+        djdcMin: 0, djdcMax: configDJDCMax,
+        qBank: configQBank
     };
 
-    // 2. Render Overview Chart
-    renderChart("diagram", baseLimits, data, showControlPoints, selectedPoint, onPointSelect, riverKey, cfg);
+    const isFocused = document.getElementById("focusObservedBtn")?.classList.contains("active");
+
+    if (isFocused && data) {
+        const safeData = data || {};
+        const all = [
+            ...(safeData.historical || []),
+            ...(safeData.latest ? [safeData.latest] : []),
+            // include median prediction line
+            ...(safeData.prediction || []),
+        ];
+
+        const validQ = all.map(d => d.q).filter(q => q > 0 && !isNaN(q));
+        const djgcPts = all.filter(d => d.phase === "DJGC").map(d => d.dj).filter(x => !isNaN(x));
+        const djdcPts = all.filter(d => d.phase === "DJDC5").map(d => d.dj).filter(x => !isNaN(x));
+
+        if (validQ.length > 0) {
+            const rawMin = d3.min(validQ);
+            const rawMax = d3.max(validQ);
+            // Multiplicative padding on log scale
+            limits.qMin = Math.max(configQMin, rawMin / 1.5);
+            limits.qMax = Math.min(configQMax, rawMax * 1.5);
+        }
+
+        if (djgcPts.length > 0) {
+            const rawMin = d3.min(djgcPts);
+            const rawMax = d3.max(djgcPts);
+            const pad = Math.max((rawMax - rawMin) * 0.15, 10);
+            limits.djgcMin = Math.max(0, rawMin - pad);
+            limits.djgcMax = Math.min(configDJGCMax, rawMax + pad);
+        }
+
+        if (djdcPts.length > 0) {
+            const rawMin = d3.min(djdcPts);
+            const rawMax = d3.max(djdcPts);
+            const pad = Math.max((rawMax - rawMin) * 0.15, 5);
+            limits.djdcMin = Math.max(0, rawMin - pad);
+            limits.djdcMax = Math.min(configDJDCMax, rawMax + pad);
+        }
+    }
+
+    renderChart("diagram", limits, data, showControlPoints, selectedPoint, onPointSelect, riverKey, cfg);
 }

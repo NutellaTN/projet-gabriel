@@ -1,97 +1,128 @@
 #!/usr/bin/env python3
+"""
+poll_daily.py — single-file polling script for Projet Gabriel.
+
+Includes all utility functions previously spread across:
+  - new_hydro_cehq.py      (CEHQ Highcharts CSV extractor via Playwright)
+  - temperature-forecast-main.py (MSC CityPage day/night + hourly forecast)
+  - temperature-hourly-main.py  (MSC SWOB realtime hourly temperature)
+"""
 from __future__ import annotations
 
-import argparse
 import base64
-import datetime as dt
+import csv
+import io
 import json
 import math
 import os
 import re
 import sys
-from collections import defaultdict
+import argparse
+import datetime
+from datetime import timedelta
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import unquote
 
 import requests
 import pytz
 import firebase_admin
 from firebase_admin import credentials, firestore
-from dotenv import load_dotenv
 
-# Load environment variables from .env if present
-load_dotenv()
+# ── Playwright is only needed for the CEHQ fetcher ──────────────────────────
+try:
+    from playwright.sync_api import sync_playwright
+    _HAS_PLAYWRIGHT = True
+except ImportError:
+    _HAS_PLAYWRIGHT = False
 
-# -----------------------------
-# CONFIG DEFAULTS (you can override via CLI)
-# -----------------------------
-MSC_API_URL = "https://api.weather.gc.ca"
-MSC_UA = "ril-backfill/1.0 (+https://api.weather.gc.ca/)"
-CEHQ_UA = "ril-backfill/1.0 (+https://www.cehq.gouv.qc.ca/)"
-CEHQ_QTXT_URL = "https://www.cehq.gouv.qc.ca/depot/historique_donnees/fichier/{station}_Q.txt"
+# ── zoneinfo (Python 3.9+) ───────────────────────────────────────────────────
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    ZoneInfo = None  # type: ignore
 
-TZ_QC = pytz.timezone("America/Toronto")
+# ═══════════════════════════════════════════════════════════════════════════════
+# CONSTANTS
+# ═══════════════════════════════════════════════════════════════════════════════
+FIREBASE_SA_ENV_VAR = "FIREBASE_SA_JSON_B64"
+STATION_KEY         = "lassomption"
+SEASON              = "2025_26"
+CEHQ_STATION        = "052219"
+
+# MSC API
+MSC_BASE_URL = "https://api.weather.gc.ca"
+MSC_UA       = "poll-daily/2.0 (+https://github.com/projet-gabriel)"
+
+# Location (L'Assomption, QC)
+LAT        = 45.81
+LON        = -73.43
+RADIUS_KM  = 80.0
+MSC_LANG   = "en"
+QUEBEC_TZ  = "America/Montreal"
+MAX_HOURS   = 48
+MAX_PERIODS = 14
+
+# CEHQ Playwright config
+CEHQ_GRAPH_URL = "https://www.cehq.gouv.qc.ca/suivihydro/graphique.asp?NoStation={station}"
+CEHQ_UA        = "cehq-csv-extract/1.0 (+https://www.cehq.gouv.qc.ca/)"
+CEHQ_NEEDLES   = [
+    "Débit observ", "Debit observ",
+    "Débit prévu", "Debit prev",
+    "IC 25-75", "Emission de la prevision", "Émission de la prévision",
+]
 
 
-# -----------------------------
-# FIREBASE SETUP (same pattern you use)
-# -----------------------------
+# ═══════════════════════════════════════════════════════════════════════════════
+# FIREBASE
+# ═══════════════════════════════════════════════════════════════════════════════
+
 def init_firebase() -> firestore.Client:
     if not firebase_admin._apps:
-        b64_json = os.environ.get("FIREBASE_SA_JSON_B64")
+        try:
+            from dotenv import load_dotenv
+            load_dotenv()
+        except ImportError:
+            pass
+        b64_json = os.environ.get(FIREBASE_SA_ENV_VAR)
         if b64_json:
             try:
                 cred_json = json.loads(base64.b64decode(b64_json).decode("utf-8"))
                 cred = credentials.Certificate(cred_json)
                 firebase_admin.initialize_app(cred)
             except Exception as e:
-                print(f"Error initializing Firebase from FIREBASE_SA_JSON_B64: {e}")
+                print(f"Error initialising Firebase from {FIREBASE_SA_ENV_VAR}: {e}")
                 sys.exit(1)
         else:
             try:
-                # Try finding it relative to the script
                 script_dir = os.path.dirname(os.path.abspath(__file__))
                 sa_path = os.path.join(script_dir, "service-account.json")
                 if not os.path.exists(sa_path):
-                    # Fallback to current working directory
                     sa_path = "service-account.json"
                 cred = credentials.Certificate(sa_path)
                 firebase_admin.initialize_app(cred)
             except Exception as e:
-                print(f"No credentials found. Set FIREBASE_SA_JSON_B64 or provide service-account.json. Error: {e}")
+                print(f"No credentials found. Set {FIREBASE_SA_ENV_VAR} or provide service-account.json. Error: {e}")
                 sys.exit(1)
     return firestore.client()
 
 
-# -----------------------------
-# UTILS
-# -----------------------------
-def parse_date_iso(s: str) -> dt.date:
-    return dt.datetime.strptime(s, "%Y-%m-%d").date()
+# ═══════════════════════════════════════════════════════════════════════════════
+# SHARED HELPERS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def to_float(x: Any) -> Optional[float]:
+    if x is None:
+        return None
+    try:
+        return float(x)
+    except Exception:
+        return None
 
 
-def date_range(start: dt.date, end: dt.date) -> List[dt.date]:
-    out = []
-    cur = start
-    while cur <= end:
-        out.append(cur)
-        cur += dt.timedelta(days=1)
-    return out
-
-
-def get_season_id(date_obj: dt.date) -> str:
-    # Season rule: starts Oct 15
-    y = date_obj.year
-    md = date_obj.month * 100 + date_obj.day
-    if md >= 1015:
-        return f"{y}_{str(y+1)[2:]}"
-    return f"{y-1}_{str(y)[2:]}"
-
-
-def qc_midday_iso(d: dt.date) -> str:
-    # Use midday to avoid DST edge cases at 00:00
-    naive = dt.datetime(d.year, d.month, d.day, 12, 0, 0)
-    aware = TZ_QC.localize(naive)
-    return aware.isoformat()
+def get_quebec_tz() -> datetime.tzinfo:
+    if ZoneInfo is None:
+        raise RuntimeError("zoneinfo not available. Use Python 3.9+ or: pip install tzdata")
+    return ZoneInfo(QUEBEC_TZ)
 
 
 def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -109,207 +140,266 @@ def bbox_from_radius_km(lat: float, lon: float, radius_km: float) -> List[float]
     return [lon - lon_deg, lat - lat_deg, lon + lon_deg, lat + lat_deg]
 
 
-def get_json(path: str, params: Dict[str, Any]) -> Dict[str, Any]:
-    url = f"{MSC_API_URL}{path}"
-    r = requests.get(url, params=params, timeout=60, headers={"User-Agent": MSC_UA})
+def msc_get_json(path: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    url = f"{MSC_BASE_URL}{path}"
+    r = requests.get(url, params=params, timeout=30, headers={"User-Agent": MSC_UA})
     r.raise_for_status()
     return r.json()
 
 
-def to_float(x: Any) -> Optional[float]:
-    if x is None:
-        return None
-    try:
-        return float(x)
-    except Exception:
-        return None
+def get_lang_value(obj: Any, lang: str = MSC_LANG) -> Any:
+    if isinstance(obj, dict) and lang in obj:
+        return obj.get(lang)
+    return obj
 
 
-# -----------------------------
-# MSC CLIMATE-DAILY (daily mean temperature)
-# -----------------------------
-def fetch_candidate_stations(lat: float, lon: float, radius_km: float, province_code: str = "QC") -> List[Dict[str, Any]]:
-    bbox = bbox_from_radius_km(lat, lon, radius_km)
-    data = get_json(
-        "/collections/climate-stations/items",
-        {
-            "f": "json",
-            "lang": "en",
-            "bbox": ",".join(map(str, bbox)),
-            "limit": 800,
-            "PROV_STATE_TERR_CODE": province_code,
-        },
-    )
-
-    feats = data.get("features", []) or []
-    stations: List[Dict[str, Any]] = []
-    for feat in feats:
-        geom = feat.get("geometry") or {}
-        coords = geom.get("coordinates") or [None, None]
-        st_lon, st_lat = coords[0], coords[1]
-        if st_lat is None or st_lon is None:
-            continue
-
-        props = feat.get("properties") or {}
-        climate_id = props.get("CLIMATE_IDENTIFIER")
-        if not climate_id:
-            continue
-
-        dist = haversine_km(lat, lon, float(st_lat), float(st_lon))
-        stations.append(
-            {
-                "distance_km": dist,
-                "lat": float(st_lat),
-                "lon": float(st_lon),
-                "name": props.get("STATION_NAME") or "Unknown",
-                "climate_id": climate_id,
-            }
-        )
-
-    stations.sort(key=lambda s: s["distance_km"])
-    return stations
+def parse_iso8601_z_to_utc(s: str) -> datetime.datetime:
+    s = s.strip()
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    d = datetime.datetime.fromisoformat(s)
+    if d.tzinfo is None:
+        d = d.replace(tzinfo=datetime.timezone.utc)
+    return d.astimezone(datetime.timezone.utc)
 
 
-def fetch_climate_daily(climate_identifier: str, start: dt.date, end: dt.date) -> List[Dict[str, Any]]:
-    time_range = f"{start.isoformat()}/{end.isoformat()}"
-    props_filter = ",".join(
-        [
-            "LOCAL_DATE",
-            "MEAN_TEMPERATURE",
-            "MEAN_TEMPERATURE_FLAG",
-            "MIN_TEMPERATURE",
-            "MAX_TEMPERATURE",
-            "STATION_NAME",
-            "CLIMATE_IDENTIFIER",
-        ]
-    )
+# ═══════════════════════════════════════════════════════════════════════════════
+# MSC CLIMATE-DAILY (historical temperatures)
+# ═══════════════════════════════════════════════════════════════════════════════
 
-    out: List[Dict[str, Any]] = []
-    limit = 500
-    offset = 0
-
+def fetch_climate_daily(climate_id: str, start_date: str, end_date: str) -> Dict[str, Optional[float]]:
+    url = "https://api.weather.gc.ca/collections/climate-daily/items"
+    limit, offset, all_props = 500, 0, []
     while True:
-        data = get_json(
-            "/collections/climate-daily/items",
-            {
-                "f": "json",
-                "lang": "en",
-                "CLIMATE_IDENTIFIER": climate_identifier,
-                "datetime": time_range,
-                "properties": props_filter,
-                "sortby": "LOCAL_DATE",
-                "limit": limit,
-                "offset": offset,
-            },
-        )
-        feats = data.get("features", []) or []
-        if not feats:
+        params = {
+            "f": "json",
+            "CLIMATE_IDENTIFIER": climate_id,
+            "datetime": f"{start_date}/{end_date}",
+            "limit": limit,
+            "offset": offset,
+            "sortby": "LOCAL_DATE",
+        }
+        try:
+            r = requests.get(url, params=params, timeout=30)
+            r.raise_for_status()
+            data = r.json()
+        except Exception as e:
+            print(f"Error fetching climate-daily data: {e}")
+            sys.exit(1)
+        features = data.get("features", [])
+        if not features:
             break
-        out.extend(feats)
-        if len(feats) < limit:
+        for f in features:
+            all_props.append(f.get("properties", {}))
+        if len(features) < limit:
             break
         offset += limit
 
-    return out
-
-
-def build_temp_maps(feats: List[Dict[str, Any]]) -> Tuple[Dict[str, Optional[float]], Dict[str, str]]:
-    """
-    Returns:
-      mean_by_date: { 'YYYY-MM-DD': mean_temp or None }
-      flag_by_date: { 'YYYY-MM-DD': flag string (maybe empty) }
-    Dedup by date: keep first occurrence.
-    """
     mean_by_date: Dict[str, Optional[float]] = {}
-    flag_by_date: Dict[str, str] = {}
-
-    rows: List[Tuple[str, Optional[float], str]] = []
-    for f in feats:
-        p = f.get("properties") or {}
+    for p in all_props:
         local_date = p.get("LOCAL_DATE")
         if not local_date:
             continue
-        # MSC API can return 'YYYY-MM-DD 00:00:00' or 'YYYY-MM-DD', we only want the date part
         d = str(local_date)[:10]
         mean_t = to_float(p.get("MEAN_TEMPERATURE"))
-        flag = str(p.get("MEAN_TEMPERATURE_FLAG") or "")
-        rows.append((d, mean_t, flag))
+        if mean_t is not None or d not in mean_by_date:
+            mean_by_date[d] = mean_t
+    return mean_by_date
 
-    rows.sort(key=lambda x: x[0])
-    for d, mean_t, flag in rows:
-        if d in mean_by_date:
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MSC CITYPAGE (forecast temperatures — day/night + hourly)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def pick_nearest_citypage_item(lat: float, lon: float, radius_km: float, lang: str) -> Tuple[str, float]:
+    bbox = bbox_from_radius_km(lat, lon, radius_km)
+    data = msc_get_json(
+        "/collections/citypageweather-realtime/items",
+        {"f": "json", "lang": lang, "bbox": ",".join(map(str, bbox)), "limit": 200},
+    )
+    feats = data.get("features", []) or []
+    if not feats:
+        raise SystemExit("No citypage points found. Increase RADIUS_KM.")
+
+    best_id, best_dist = None, None
+    for f in feats:
+        fid = f.get("id")
+        coords = (f.get("geometry") or {}).get("coordinates") or [None, None]
+        st_lon, st_lat = coords[0], coords[1]
+        if fid is None or st_lat is None or st_lon is None:
             continue
-        mean_by_date[d] = mean_t
-        flag_by_date[d] = flag
+        d = haversine_km(lat, lon, float(st_lat), float(st_lon))
+        if best_dist is None or d < best_dist:
+            best_dist, best_id = d, fid
 
-    return mean_by_date, flag_by_date
+    if best_id is None:
+        raise SystemExit("Nearby items returned, but none had usable coordinates/ids.")
+    return best_id, best_dist  # type: ignore[return-value]
 
 
-def compute_djgc_over_range(mean_by_date: Dict[str, Optional[float]]) -> Dict[str, float]:
-    """
-    Computes DJGC starting at 0, day by day chronologically, using mean daily temperature T_mean:
-      - if T_mean < 0: DJGC += abs(T_mean)
-      - if T_mean > 0: DJGC = max(0, DJGC - T_mean)
-      - if T_mean == 0 or missing: DJGC unchanged
-    """
-    djgc = 0.0
-    out: Dict[str, float] = {}
-    
-    # Sort dates chronologically to ensure proper DJGC accumulation
-    sorted_dates = sorted(mean_by_date.keys())
-    
-    for ds in sorted_dates:
-        mean_t = mean_by_date.get(ds)
-        
-        if mean_t is None:
-            # no update if missing
-            out[ds] = round(djgc, 3)
+def extract_hourly_forecast_rows(props: Dict[str, Any], lang: str, max_hours: int, qc_tz: datetime.tzinfo) -> List[List[Any]]:
+    hfg = props.get("hourlyForecastGroup") or {}
+    hourly = hfg.get("hourlyForecasts") or []
+    if not isinstance(hourly, list) or not hourly:
+        return []
+
+    by_hour: Dict[datetime.datetime, Tuple[datetime.datetime, Optional[float], Optional[str]]] = {}
+    for hf in hourly:
+        ts_raw = hf.get("timestamp")
+        ts_raw = get_lang_value(ts_raw, lang) if ts_raw is not None else None
+        if not ts_raw:
             continue
-            
-        if mean_t < 0:
-            djgc += abs(mean_t)
-        elif mean_t > 0:
-            djgc = max(0.0, djgc - mean_t)
-            
-        out[ds] = round(djgc, 3)
-        
-    return out
+        ts_utc = parse_iso8601_z_to_utc(str(ts_raw))
+        ts_local = ts_utc.astimezone(qc_tz)
+        hour_bucket = ts_local.replace(minute=0, second=0, microsecond=0)
+        temp_block = hf.get("temperature") or {}
+        temp_val = get_lang_value(temp_block.get("value"), lang)
+        temp_units = get_lang_value(temp_block.get("units"), lang)
+        by_hour[hour_bucket] = (ts_local, to_float(temp_val), temp_units)
+
+    rows: List[List[Any]] = []
+    for hb in sorted(by_hour.keys())[: (max_hours if max_hours > 0 else len(by_hour))]:
+        ts_local, temp, units = by_hour[hb]
+        rows.append([hb.strftime("%Y-%m-%d %H:%M %Z"), temp, units])
+    return rows
 
 
-# -----------------------------
-# CEHQ Q.TXT (daily discharge)
-# -----------------------------
-DATA_RE = re.compile(
-    r"^\s*(?P<station>\d+)\s+"
-    r"(?P<date>\d{4}/\d{2}/\d{2})\s+"
-    r"(?P<q>-?\d+(?:[.,]\d+)?)"
-    r"(?:\s+(?P<remark>\S+))?\s*$"
-)
+def extract_daynight_rows(props: Dict[str, Any], lang: str, max_periods: int) -> List[List[Any]]:
+    fg = props.get("forecastGroup") or {}
+    forecasts = fg.get("forecasts") or []
+    if not isinstance(forecasts, list) or not forecasts:
+        return []
+
+    rows: List[List[Any]] = []
+    seen: set = set()
+    for fc in forecasts:
+        period = fc.get("period") or {}
+        label = (
+            get_lang_value(period.get("textForecastName"), lang)
+            or get_lang_value(period.get("value"), lang)
+            or "?"
+        )
+        temps_container = fc.get("temperatures") or {}
+        temps = temps_container.get("temperature") or []
+        if isinstance(temps, dict):
+            temps = [temps]
+
+        high = low = units = None
+        for t in temps:
+            t_class = get_lang_value(t.get("class"), lang)
+            t_val = get_lang_value(t.get("value"), lang) if "value" in t else get_lang_value(t, lang)
+            t_units = get_lang_value(t.get("units"), lang)
+            if units is None and t_units:
+                units = t_units
+            v = to_float(t_val)
+            if t_class == "high":
+                high = v
+            elif t_class == "low":
+                low = v
+            else:
+                if high is None:
+                    high = v
+                elif low is None:
+                    low = v
+
+        start_time = (
+            period.get("startTime") or period.get("start_time")
+            or fc.get("startTime") or fc.get("start_time")
+        )
+        start_time = get_lang_value(start_time, lang) if start_time is not None else None
+        key = ("t", str(start_time)) if start_time else ("v", str(label), str(high), str(low))
+        if key in seen:
+            continue
+        seen.add(key)
+        rows.append([label, high, low, units])
+        if max_periods > 0 and len(rows) >= max_periods:
+            break
+    return rows
 
 
-def fetch_text(url: str) -> str:
-    r = requests.get(url, timeout=120, headers={"User-Agent": CEHQ_UA})
-    r.raise_for_status()
-    if not r.encoding:
-        r.encoding = "utf-8"
-    text = r.text
-    # If decoding looks broken, fallback to latin-1
-    if "\ufffd" in text:
-        text = r.content.decode("latin-1", errors="replace")
-    return text
+def get_realtime_and_forecast_temps() -> Dict[str, float]:
+    """Fetch ECCC Day/Night forecasts and compute daily average temperatures."""
+    print("[running] Fetching ECCC forecast temperatures via MSC CityPage API...")
+    qc_tz = get_quebec_tz()
+
+    item_id, _ = pick_nearest_citypage_item(LAT, LON, RADIUS_KM, MSC_LANG)
+    item = msc_get_json(
+        f"/collections/citypageweather-realtime/items/{item_id}",
+        {"f": "json", "lang": MSC_LANG},
+    )
+    props = item.get("properties") or {}
+    daynight_rows = extract_daynight_rows(props, MSC_LANG, MAX_PERIODS)
+
+    tz = pytz.timezone(QUEBEC_TZ)
+    now = datetime.datetime.now(tz)
+    current_date = now.date()
+
+    future_temps: Dict[str, float] = {}
+    last_night_low = None
+
+    for row in daynight_rows:
+        label = row[0].lower().strip()
+        high  = row[1]
+        low   = row[2]
+        if label == "today":
+            pass
+        elif label == "tonight" or "night" in label:
+            if low is not None:
+                last_night_low = low
+        else:
+            target_date = current_date
+            days = {"monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
+                    "friday": 4, "saturday": 5, "sunday": 6}
+            if label in days:
+                target_wd = days[label]
+                target_date += timedelta(days=1)
+                while target_date.weekday() != target_wd:
+                    target_date += timedelta(days=1)
+            else:
+                target_date += timedelta(days=1)
+
+            if last_night_low is not None and high is not None:
+                avg_t = (last_night_low + high) / 2.0
+                future_temps[target_date.strftime("%Y-%m-%d")] = round(avg_t, 3)
+            current_date = target_date
+
+    # Bridge gaps with hourly average
+    hourly_rows = extract_hourly_forecast_rows(props, MSC_LANG, MAX_HOURS, qc_tz)
+    hourly_by_date: Dict[str, List[float]] = {}
+    for hr in hourly_rows:
+        dt_str = str(hr[0])
+        if len(dt_str) >= 10:
+            d = dt_str[:10]
+            val = hr[1]
+            if val is not None:
+                hourly_by_date.setdefault(d, []).append(val)
+    for d, vals in hourly_by_date.items():
+        if d not in future_temps and vals:
+            future_temps[d] = round(sum(vals) / len(vals), 3)
+
+    return future_temps
 
 
-def parse_date_ymd_slash(s: str) -> dt.date:
-    return dt.datetime.strptime(s, "%Y/%m/%d").date()
+# ═══════════════════════════════════════════════════════════════════════════════
+# CEHQ HIGHCHARTS CSV EXTRACTOR (Playwright)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _sniff_delimiter(text: str) -> str:
+    sample = text[:4096]
+    try:
+        return csv.Sniffer().sniff(sample, delimiters=";,\t").delimiter
+    except Exception:
+        return ";"
 
 
-def to_float_maybe(x: str) -> Optional[float]:
-    if x is None:
-        return None
-    s = str(x).strip().replace("\xa0", " ")
+def _to_float_csv(x: str) -> Optional[float]:
+    s = (x or "").strip().replace("\xa0", " ")
     if not s:
         return None
     s = s.replace("*", "").strip()
+    s = re.sub(r"[^0-9,\.\-]+", "", s)
+    if not s:
+        return None
     s = s.replace(",", ".")
     try:
         return float(s)
@@ -317,187 +407,267 @@ def to_float_maybe(x: str) -> Optional[float]:
         return None
 
 
-def parse_qtxt_daily(text: str, station_filter: str) -> List[Tuple[dt.date, float, str]]:
-    rows: List[Tuple[dt.date, float, str]] = []
-    for line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
-        m = DATA_RE.match(line)
-        if not m:
-            continue
-        st = m.group("station")
-        if st != station_filter:
-            continue
-        d = parse_date_ymd_slash(m.group("date"))
-        q = to_float_maybe(m.group("q"))
-        if q is None:
-            continue
-        remark = (m.group("remark") or "").strip()
-        rows.append((d, q, remark))
-    rows.sort(key=lambda x: x[0])
-    return rows
+def _decode_if_data_url(s: str) -> str:
+    if not s.startswith("data:text/csv"):
+        return s
+    if ";base64," in s:
+        b64 = s.split(";base64,", 1)[1]
+        return base64.b64decode(b64).decode("utf-8", errors="replace")
+    if "," in s:
+        return unquote(s.split(",", 1)[1])
+    return s
 
 
-def filter_range_q(rows: List[Tuple[dt.date, float, str]], start: dt.date, end: dt.date) -> List[Tuple[dt.date, float, str]]:
-    return [(d, q, r) for (d, q, r) in rows if start <= d <= end]
-
-
-def dedupe_daily_q(rows: List[Tuple[dt.date, float, str]]) -> List[Tuple[dt.date, float, str]]:
-    sums: Dict[dt.date, float] = defaultdict(float)
-    counts: Dict[dt.date, int] = defaultdict(int)
-    remarks: Dict[dt.date, set[str]] = defaultdict(set)
-
-    for d, q, r in rows:
-        sums[d] += q
-        counts[d] += 1
-        if r:
-            remarks[d].add(r)
-
-    out: List[Tuple[dt.date, float, str]] = []
-    for d in sorted(counts.keys()):
-        avg = sums[d] / counts[d]
-        rem = " ".join(sorted(remarks[d])) if remarks[d] else ""
-        out.append((d, avg, rem))
-    return out
-
-
-def fetch_cehq_daily_discharge(station: str, start: dt.date, end: dt.date) -> Dict[str, Tuple[float, str]]:
-    url = CEHQ_QTXT_URL.format(station=station)
-    print(f"[download] {url}")
-    text = fetch_text(url)
-
-    rows = parse_qtxt_daily(text, station_filter=station)
+def _parse_cehq_csv(csv_text: str) -> Tuple[List[str], List[List[Any]]]:
+    if csv_text.startswith("\ufeff"):
+        csv_text = csv_text.lstrip("\ufeff")
+    delim = _sniff_delimiter(csv_text)
+    reader = csv.reader(io.StringIO(csv_text), delimiter=delim)
+    rows = [r for r in reader if r and any(c.strip() for c in r)]
     if not rows:
-        raise SystemExit(
-            "No discharge rows parsed from CEHQ Q.txt.\n"
-            "Tip: open the URL in a browser and confirm data lines look like: 052219 1970/01/01 9.400 R"
+        raise RuntimeError("CSV is empty.")
+    headers = [h.strip().strip('"').strip() for h in rows[0]]
+    width = len(headers)
+    data: List[List[Any]] = []
+    for r in rows[1:]:
+        r = [c.strip().strip('"').strip() for c in r]
+        if len(r) < width:
+            r += [""] * (width - len(r))
+        elif len(r) > width:
+            r = r[:width]
+        out_row: List[Any] = []
+        for i, v in enumerate(r):
+            if i == 0 and "date" in headers[0].lower():
+                out_row.append(v)
+            else:
+                fv = _to_float_csv(v)
+                out_row.append(fv if fv is not None else v)
+        data.append(out_row)
+    return headers, data
+
+
+def _get_cehq_csv_via_playwright(station: str, headless: bool = True) -> str:
+    if not _HAS_PLAYWRIGHT:
+        raise RuntimeError("playwright is not installed. Run: pip install playwright && playwright install chromium")
+    url = CEHQ_GRAPH_URL.format(station=station)
+
+    EXTRACT_JS = """
+    ({needles}) => {
+      const charts = (window.Highcharts && Array.isArray(Highcharts.charts))
+        ? Highcharts.charts.filter(Boolean) : [];
+
+      function tryChart(chart) {
+        if (!chart) return null;
+        if (typeof chart.getCSV === "function") {
+          try { const c = chart.getCSV(); if (typeof c === "string" && c.length > 20) return c; } catch(e) {}
+        }
+        if (typeof chart.downloadCSV === "function") {
+          try {
+            let captured = null;
+            const old = window.Highcharts.downloadURL;
+            window.Highcharts.downloadURL = (dataURL) => { captured = dataURL; };
+            chart.downloadCSV();
+            window.Highcharts.downloadURL = old;
+            if (captured && captured.startsWith("data:text/csv")) return captured;
+          } catch(e) {}
+        }
+        return null;
+      }
+
+      for (const ch of charts) {
+        const csv = tryChart(ch);
+        if (!csv) continue;
+        if (needles.some(n => csv.includes(n))) return { ok: true, csv };
+      }
+      for (const ch of charts) {
+        const csv = tryChart(ch);
+        if (csv) return { ok: true, csv };
+      }
+      return { ok: false };
+    }
+    """
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=headless)
+        page = browser.new_page(user_agent=CEHQ_UA)
+        page.goto(url, wait_until="networkidle", timeout=180_000)
+        page.wait_for_function(
+            "window.Highcharts && Array.isArray(Highcharts.charts) && Highcharts.charts.filter(Boolean).length > 0",
+            timeout=120_000,
         )
+        result = page.evaluate(EXTRACT_JS, CEHQ_NEEDLES)
+        browser.close()
 
-    rows = filter_range_q(rows, start, end)
-    if not rows:
-        raise SystemExit("Parsed CEHQ Q.txt, but no rows fall inside the requested date range.")
+    if not result.get("ok"):
+        raise RuntimeError(f"Could not extract CSV from CEHQ Highcharts for station {station}.")
+    return _decode_if_data_url(str(result["csv"]))
 
-    rows = dedupe_daily_q(rows)
 
-    out: Dict[str, Tuple[float, str]] = {}
-    for d, q, r in rows:
-        out[d.isoformat()] = (q, r)
+def parse_highcharts_q() -> Tuple[Dict[str, float], Dict[str, Dict[str, float]]]:
+    """
+    Returns (observed_q_by_date, predicted_q_by_date).
+    Fetches CEHQ Highcharts data directly via Playwright — no subprocess needed.
+    """
+    print("[running] Fetching CEHQ discharge data via Playwright...")
+    try:
+        raw_csv = _get_cehq_csv_via_playwright(CEHQ_STATION, headless=True)
+        _, rows = _parse_cehq_csv(raw_csv)
+
+        daily_obs: Dict[str, Dict] = {}
+        daily_pred: Dict[str, Dict] = {}
+
+        for row in rows:
+            if len(row) < 8:
+                continue
+            dt_str = str(row[0]).strip()
+            if len(dt_str) < 19:
+                continue
+            d = dt_str[:10]
+            hour = int(dt_str[11:13])
+            dist = abs(hour - 12)
+
+            obs_val  = to_float(str(row[2]).replace(",", ".")) if row[2] else None
+            pred_val = to_float(str(row[5]).replace(",", ".")) if row[5] else None
+            if pred_val is None:
+                pred_val = to_float(str(row[4]).replace(",", ".")) if row[4] else None
+            p25 = to_float(str(row[6]).replace(",", ".")) if row[6] else None
+            p75 = to_float(str(row[7]).replace(",", ".")) if row[7] else None
+
+            if obs_val is not None:
+                if d not in daily_obs or dist < daily_obs[d]["dist"]:
+                    daily_obs[d] = {"dist": dist, "q": obs_val}
+            if pred_val is not None and p25 is not None and p75 is not None:
+                if d not in daily_pred or dist < daily_pred[d]["dist"]:
+                    daily_pred[d] = {"dist": dist, "q": pred_val, "p25": p25, "p75": p75}
+
+        obs_by_date  = {d: v["q"] for d, v in daily_obs.items()}
+        pred_by_date = {d: {"q": v["q"], "p25": v["p25"], "p75": v["p75"]} for d, v in daily_pred.items()}
+        return obs_by_date, pred_by_date
+
+    except Exception as e:
+        print(f"Failed to fetch CEHQ data: {e}")
+        sys.exit(1)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DJDC-5 COMPUTATION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def compute_djdc_array(mean_by_date: Dict[str, float]) -> Dict[str, float]:
+    djdc = 0.0
+    out: Dict[str, float] = {}
+    for ds in sorted(mean_by_date.keys()):
+        t = mean_by_date[ds]
+        delta = t + 5.0
+        if delta > 0:
+            djdc += delta
+        elif delta < 0:
+            djdc = max(0.0, djdc - abs(delta))
+        out[ds] = round(djdc, 3)
     return out
 
 
-# -----------------------------
-# FIRESTORE WRITE
-# -----------------------------
-def chunk_list(xs: List[str], n: int) -> List[List[str]]:
-    return [xs[i : i + n] for i in range(0, len(xs), n)]
-
+# ═══════════════════════════════════════════════════════════════════════════════
+# MAIN
+# ═══════════════════════════════════════════════════════════════════════════════
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Backfill daily mean temp (MSC) + daily discharge (CEHQ) into Firestore.")
-    ap.add_argument("--station-doc", default="lassomption", help="Firestore station document id (default: lassomption)")
-    ap.add_argument("--cehq-station", default="052219", help="CEHQ station id used in *_Q.txt (default: 052219)")
+    parser = argparse.ArgumentParser(description="Poll daily data and push to Firestore.")
+    parser.add_argument("--start", default="2026-02-15", help="Start date for DJDC-5 accumulation (YYYY-MM-DD)")
+    parser.add_argument("--dry-run", action="store_true", help="Do not write to Firestore")
+    args = parser.parse_args()
 
-    ap.add_argument("--lat", type=float, default=45.81)
-    ap.add_argument("--lon", type=float, default=-73.43)
-    ap.add_argument("--radius-km", type=float, default=250.0)
-    ap.add_argument("--try-n", type=int, default=25)
-    ap.add_argument("--min-days", type=int, default=30)
+    # 1. Historical Temp
+    yesterday = (datetime.datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
+    print(f"Fetching climate-daily from {args.start} to {yesterday}...")
+    hist_temp = fetch_climate_daily("7014160", args.start, yesterday)
 
-    ap.add_argument("--start", default="2025-10-15")
-    ap.add_argument("--end", default="2026-02-08")
+    # 2. Future Temp (forecast)
+    future_temp = get_realtime_and_forecast_temps()
 
-    ap.add_argument("--dry-run", action="store_true", help="Fetch/compute but do not write to Firestore")
-    ap.add_argument("--chunk-days", type=int, default=150, help="Write in chunks of N days (default 150)")
-    args = ap.parse_args()
+    # 3. Merge Temp
+    all_temp: Dict[str, float] = {}
+    for d, t in hist_temp.items():
+        if t is not None:
+            all_temp[d] = t
+    for d, t in future_temp.items():
+        if d not in all_temp:
+            all_temp[d] = t
 
-    start = parse_date_iso(args.start)
-    end = parse_date_iso(args.end)
-    if end < start:
-        raise SystemExit("--end must be >= --start")
+    # 4. Generate DJDC-5 series
+    djdc_series = compute_djdc_array(all_temp)
 
-    season_id = get_season_id(start)  # for this range it's one season
-    now_qc = dt.datetime.now(TZ_QC).isoformat()
+    # 5. Fetch Realtime & Prediction Q
+    obs_q, pred_q = parse_highcharts_q()
 
-    # 1) Pick best climate station for coverage
-    stations = fetch_candidate_stations(args.lat, args.lon, args.radius_km, province_code="QC")
-    if not stations:
-        raise SystemExit("No climate stations found. Increase --radius-km.")
+    # 6. Prepare Firestore updates
+    db = init_firebase()
+    doc_ref = (
+        db.collection("stations")
+        .document(STATION_KEY)
+        .collection("seasons")
+        .document(SEASON)
+    )
 
-    best = None
-    best_count = -1
-    best_feats: List[Dict[str, Any]] = []
+    doc_snap = doc_ref.get()
+    doc_data = doc_snap.to_dict() if doc_snap.exists else {}
 
-    expected_days = (end - start).days + 1
-    for st in stations[: max(1, args.try_n)]:
-        feats = fetch_climate_daily(st["climate_id"], start, end)
-        mean_by_date, _ = build_temp_maps(feats)
-        n = len(mean_by_date)
-        if n > best_count:
-            best = st
-            best_count = n
-            best_feats = feats
-        if n >= expected_days:
-            break
+    existing_points = doc_data.get("djdc_q_points", [])
+    merged_points: Dict[str, Any] = {}
 
-    if best is None or best_count < args.min_days:
-        raise SystemExit(
-            f"Tried {min(args.try_n, len(stations))} stations within {args.radius_km} km, "
-            f"but best returned only {best_count} days. Increase --radius-km or widen try-n."
-        )
+    base_date = datetime.datetime.strptime(args.start, "%Y-%m-%d")
+    for pt in existing_points:
+        d_str = pt.get("date")
+        if not d_str:
+            d_str = base_date.strftime("%Y-%m-%d")
+            base_date += timedelta(days=1)
+        pt["date"] = d_str
+        merged_points[d_str] = pt
 
-    mean_by_date, flag_by_date = build_temp_maps(best_feats)
-    djgc_by_date = compute_djgc_over_range(mean_by_date)
+    sorted_obs_dates = sorted(obs_q.keys())
+    for d in sorted_obs_dates:
+        if d in djdc_series:
+            merged_points[d] = {"date": d, "djdc": djdc_series[d], "q": obs_q[d]}
 
-    print("\n=== Temperature source (MSC climate-daily) ===")
-    print(f"Station:   {best['name']}")
-    print(f"ClimateID: {best['climate_id']}")
-    print(f"Distance:  {best['distance_km']:.2f} km")
-    print(f"Coverage:  {best_count}/{expected_days} days")
+    final_points = [merged_points[d] for d in sorted(merged_points.keys())]
 
-    # 2) Fetch discharge from CEHQ Q.txt
-    q_by_date = fetch_cehq_daily_discharge(args.cehq_station, start, end)
-    print("\n=== Discharge source (CEHQ Q.txt) ===")
-    print(f"Station:   {args.cehq_station}")
-    print(f"Coverage:  {len(q_by_date)}/{expected_days} days")
+    latest_date = sorted_obs_dates[-1] if sorted_obs_dates else None
+    latest_obj = doc_data.get("latest")
+    if latest_date and latest_date in djdc_series:
+        latest_obj = {
+            "date":  latest_date,
+            "dj":    djdc_series[latest_date],
+            "q":     obs_q[latest_date],
+            "phase": "DJDC5",
+        }
 
-    # Build the DJGC / Discharge points array
-    all_dates = [d.isoformat() for d in date_range(start, end)]
-    points = []
+    pred_values: Dict[str, Any] = {}
+    for d, q_info in pred_q.items():
+        if d in obs_q:
+            continue
+        if d in djdc_series:
+            pred_values[d] = {
+                "dj":  djdc_series[d],
+                "q":   q_info["q"],
+                "p25": q_info["p25"],
+                "p75": q_info["p75"],
+            }
 
-    for ds in all_dates:
-        djgc = djgc_by_date.get(ds)
-        q_tuple = q_by_date.get(ds)
-        
-        # Only keep days where both DJGC and Q exist
-        if djgc is not None and q_tuple is not None:
-            q_val = q_tuple[0]
-            if q_val is not None:
-                points.append({
-                    "djgc": round(float(djgc), 3),
-                    "q": round(float(q_val), 3)
-                })
+    prediction_obj = {"phase": "DJDC5", "values": pred_values}
 
-    updates = {
-        "djgc_q_points": points
-    }
-
-    print("\n=== Firestore target ===")
-    print(f"stations/{args.station_doc}/seasons/{season_id}")
-    print(f"Total valid DJGC vs Q points: {len(points)}")
-    print(f"Dry-run: {args.dry_run}")
+    print(f"\n=== Firestore target ===")
+    print(f"Latest Point: {latest_obj}")
+    print(f"Predictions:  {len(pred_values)} future points")
 
     if args.dry_run:
         print("Dry-run enabled: not writing anything.")
-        # If dry run, let's print the last few points just to verify the structure
-        print("Sample points:", json.dumps(points[-5:], indent=2))
         return
 
-    db = init_firebase()
-    ref = db.collection("stations").document(args.station_doc).collection("seasons").document(season_id)
-
-    # We can just write the entire object at once
-    ref.set(updates, merge=True)
-    print(f"Committed {len(points)} DJGC vs Q pairs to Firestore.")
-
-    print("Done.")
+    doc_ref.set(
+        {"djdc_q_points": final_points, "latest": latest_obj, "prediction": prediction_obj},
+        merge=True,
+    )
+    print("Updates committed. Done.")
 
 
 if __name__ == "__main__":

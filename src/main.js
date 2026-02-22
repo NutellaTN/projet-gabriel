@@ -98,6 +98,69 @@ document.addEventListener('DOMContentLoaded', () => {
             drawDiagram(selectedPoint, showControlPoints, onPointSelect, currentSeries);
         });
 
+    // --- View Mode ---
+    document.getElementById("focusObservedBtn").addEventListener("click", () => {
+        document.getElementById("focusObservedBtn").classList.add("active");
+        document.getElementById("resetViewBtn").classList.remove("active");
+        drawDiagram(selectedPoint, showControlPoints, onPointSelect, currentSeries);
+    });
+    document.getElementById("resetViewBtn").addEventListener("click", () => {
+        document.getElementById("resetViewBtn").classList.add("active");
+        document.getElementById("focusObservedBtn").classList.remove("active");
+        drawDiagram(selectedPoint, showControlPoints, onPointSelect, currentSeries);
+    });
+
+    // --- Data Pipeline: Manual Trigger ---
+    document.getElementById("runPollBtn").addEventListener("click", async () => {
+        const statusEl = document.getElementById("pollStatus");
+        const btn = document.getElementById("runPollBtn");
+
+        // GitHub repo config (hard-coded — not a secret)
+        const OWNER = "NutellaTN";
+        const REPO = "projet-gabriel";
+        const WORKFLOW = "poll_daily.yml";
+
+        // PAT must be set in a .env file as VITE_GITHUB_PAT (repo scope)
+        const token = import.meta.env.VITE_GITHUB_PAT;
+        if (!token) {
+            statusEl.style.color = "#f87171";
+            statusEl.textContent = "⚠ VITE_GITHUB_PAT not set in .env";
+            return;
+        }
+
+        btn.disabled = true;
+        statusEl.style.color = "#94a3b8";
+        statusEl.textContent = "Dispatching…";
+
+        try {
+            const res = await fetch(
+                `https://api.github.com/repos/${OWNER}/${REPO}/actions/workflows/${WORKFLOW}/dispatches`,
+                {
+                    method: "POST",
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                        Accept: "application/vnd.github+json",
+                        "X-GitHub-Api-Version": "2022-11-28",
+                    },
+                    body: JSON.stringify({ ref: "main" }),
+                }
+            );
+            if (res.status === 204) {
+                statusEl.style.color = "#4ade80";
+                statusEl.textContent = "✓ Running on GitHub Actions!";
+            } else {
+                const body = await res.json().catch(() => ({}));
+                statusEl.style.color = "#f87171";
+                statusEl.textContent = `✗ ${res.status}: ${body.message || "Unknown error"}`;
+            }
+        } catch (err) {
+            statusEl.style.color = "#f87171";
+            statusEl.textContent = `✗ Network error: ${err.message}`;
+        } finally {
+            btn.disabled = false;
+        }
+    });
+
     document
         .getElementById("updatePointBtn")
         .addEventListener("click", () => {

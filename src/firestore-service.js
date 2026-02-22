@@ -45,30 +45,34 @@ export function subscribeToSeasonData(stationId, onData) {
 }
 
 function processSeasonData(data, callback) {
-    // 1. Parse DJGC vs Q Points Array
-    const pointsArray = data.djgc_q_points || [];
-    
     const historical = [];
-    let latest = null;
 
-    pointsArray.forEach((ptData, index) => {
-        const pt = {
-            dj: ptData.djgc,
-            q: ptData.q,
-            phase: "DJGC" // We only have DJGC now
-        };
-        
-        // Treat the last point as 'latest' for styling purposes
-        if (index === pointsArray.length - 1) {
-            latest = pt;
-        } else {
-            historical.push(pt);
-        }
-    });
+    // 1. DJGC Points (Winter)
+    if (data.djgc_q_points) {
+        data.djgc_q_points.forEach(pt => {
+            historical.push({
+                dj: pt.djgc,
+                q: pt.q,
+                phase: "DJGC"
+            });
+        });
+    }
 
+    // 2. DJDC-5 Points (Spring Thaw)
+    if (data.djdc_q_points) {
+        data.djdc_q_points.forEach(pt => {
+            historical.push({
+                dj: pt.djdc,
+                q: pt.q,
+                phase: "DJDC5"
+            });
+        });
+    }
 
+    // 3. Latest observed point
+    const latest = data.latest || null;
 
-    // 2. Parse Prediction
+    // 4. Prediction Points
     const predData = data.prediction || {};
     const predValues = predData.values || {};
 
@@ -76,11 +80,11 @@ function processSeasonData(data, callback) {
         const item = predValues[dateKey];
         return {
             date: dateKey,
-            dj: item.dj, // Predicted DJ
-            q: item.q,   // Predicted Q (Median)
+            dj: item.dj,
+            q: item.q,
             q25: item.p25,
             q75: item.p75,
-            phase: predData.phase // Assumes whole pred block has same phase? Or check if needed.
+            phase: predData.phase || "DJDC5"
         };
     });
 
