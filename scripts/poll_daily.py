@@ -495,7 +495,7 @@ def _get_cehq_csv_via_playwright(station: str, headless: bool = True) -> str:
             "window.Highcharts && Array.isArray(Highcharts.charts) && Highcharts.charts.filter(Boolean).length > 0",
             timeout=120_000,
         )
-        result = page.evaluate(EXTRACT_JS, CEHQ_NEEDLES)
+        result = page.evaluate(EXTRACT_JS, {"needles": CEHQ_NEEDLES})
         browser.close()
 
     if not result.get("ok"):
