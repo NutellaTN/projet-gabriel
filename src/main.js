@@ -111,28 +111,56 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // --- Data Pipeline: Manual Trigger ---
-    document.getElementById("runPollBtn").addEventListener("click", async () => {
+    const GITHUB_OWNER = "NutellaTN";
+    const GITHUB_REPO = "projet-gabriel";
+    const GITHUB_WORKFLOW = "poll_daily.yml";
+
+    async function pollGitHubRunStatus(runId, headers, initialStatus) {
         const statusEl = document.getElementById("pollStatus");
         const btn = document.getElementById("runPollBtn");
         const progressEl = document.getElementById("pollProgress");
 
-        // GitHub repo config (hard-coded — not a secret)
-        const OWNER = "NutellaTN";
-        const REPO = "projet-gabriel";
-        const WORKFLOW = "poll_daily.yml";
-
-        // PAT must be set in a .env file as VITE_GITHUB_PAT (repo scope)
-        const token = import.meta.env.VITE_GITHUB_PAT;
-        if (!token) {
-            statusEl.style.color = "#f87171";
-            statusEl.textContent = "⚠ VITE_GITHUB_PAT not set in .env";
-            return;
-        }
-
         btn.disabled = true;
         progressEl.style.display = "block";
         statusEl.style.color = "#94a3b8";
-        statusEl.textContent = "Dispatching…";
+
+        let status = initialStatus;
+        let conclusion = null;
+
+        try {
+            while (status !== "completed") {
+                statusEl.textContent = `Status: ${status.replace("_", " ")}…`;
+                await new Promise((r) => setTimeout(r, 5000)); // Poll every 5s
+
+                const pollRes = await fetch(
+                    `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/actions/runs/${runId}`,
+                    { headers }
+                );
+                const pollData = await pollRes.json();
+                status = pollData.status;
+                conclusion = pollData.conclusion;
+            }
+
+            if (conclusion === "success") {
+                statusEl.style.color = "#4ade80";
+                statusEl.textContent = "✓ Poll Completed successfully!";
+            } else {
+                statusEl.style.color = "#f87171";
+                statusEl.textContent = `✗ Poll failed (${conclusion})`;
+            }
+        } catch (err) {
+            statusEl.style.color = "#f87171";
+            statusEl.textContent = `✗ Error: ${err.message}`;
+        } finally {
+            btn.disabled = false;
+            progressEl.style.display = "none";
+        }
+    }
+
+    // Immediately check if a run is already active on page load
+    (async function checkActivePollRun() {
+        const token = import.meta.env.VITE_GITHUB_PAT;
+        if (!token) return;
 
         const headers = {
             Authorization: `Bearer ${token}`,
@@ -141,9 +169,48 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         try {
+            const res = await fetch(
+                `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/actions/workflows/${GITHUB_WORKFLOW}/runs?per_page=1`,
+                { headers }
+            );
+            const data = await res.json();
+            const run = data.workflow_runs?.[0];
+            if (run && (run.status === "in_progress" || run.status === "queued" || run.status === "pending")) {
+                pollGitHubRunStatus(run.id, headers, run.status);
+            }
+        } catch (e) {
+            console.error("Failed to check active poll runs on load:", e);
+        }
+    })();
+
+    document.getElementById("runPollBtn").addEventListener("click", async () => {
+        const statusEl = document.getElementById("pollStatus");
+        const btn = document.getElementById("runPollBtn");
+        const progressEl = document.getElementById("pollProgress");
+
+        const token = import.meta.env.VITE_GITHUB_PAT;
+        if (!token) {
+            statusEl.style.color = "#f87171";
+            statusEl.textContent = "⚠ VITE_GITHUB_PAT not set in .env";
+            return;
+        }
+
+        const headers = {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        };
+
+        // UI Optimistic Update
+        btn.disabled = true;
+        progressEl.style.display = "block";
+        statusEl.style.color = "#94a3b8";
+        statusEl.textContent = "Dispatching…";
+
+        try {
             // 1. Dispatch the workflow
             const dispatchRes = await fetch(
-                `https://api.github.com/repos/${OWNER}/${REPO}/actions/workflows/${WORKFLOW}/dispatches`,
+                `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/actions/workflows/${GITHUB_WORKFLOW}/dispatches`,
                 { method: "POST", headers, body: JSON.stringify({ ref: "main" }) }
             );
 
@@ -153,12 +220,12 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             statusEl.textContent = "Starting run (locating job)…";
-            // Wait 2 seconds for GitHub to register the run
+            // Wait 2 seconds for GitHub to assign an ID
             await new Promise((r) => setTimeout(r, 2000));
 
             // 2. Find the newly created run
             const runsRes = await fetch(
-                `https://api.github.com/repos/${OWNER}/${REPO}/actions/workflows/${WORKFLOW}/runs?per_page=1`,
+                `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/actions/workflows/${GITHUB_WORKFLOW}/runs?per_page=1`,
                 { headers }
             );
             const runsData = await runsRes.json();
@@ -168,39 +235,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error("Could not locate the workflow run.");
             }
 
-            let runId = run.id;
-            let status = run.status;
-            let conclusion = run.conclusion;
-
-            // 3. Poll until completed
-            while (status !== "completed") {
-                statusEl.textContent = `Status: ${status.replace("_", " ")}…`;
-                await new Promise((r) => setTimeout(r, 5000)); // Poll every 5s
-
-                const pollRes = await fetch(
-                    `https://api.github.com/repos/${OWNER}/${REPO}/actions/runs/${runId}`,
-                    { headers }
-                );
-                const pollData = await pollRes.json();
-                status = pollData.status;
-                conclusion = pollData.conclusion;
-            }
-
-            // 4. Job finished
-            if (conclusion === "success") {
-                statusEl.style.color = "#4ade80";
-                statusEl.textContent = "✓ Poll Completed successfully!";
-            } else {
-                statusEl.style.color = "#f87171";
-                statusEl.textContent = `✗ Poll failed (${conclusion})`;
-            }
+            // 3. Hand off to the polling loop
+            pollGitHubRunStatus(run.id, headers, run.status);
 
         } catch (err) {
-            statusEl.style.color = "#f87171";
-            statusEl.textContent = `✗ Error: ${err.message}`;
-        } finally {
             btn.disabled = false;
             progressEl.style.display = "none";
+            statusEl.style.color = "#f87171";
+            statusEl.textContent = `✗ Error: ${err.message}`;
         }
     });
 
