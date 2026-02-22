@@ -610,7 +610,13 @@ export function drawDiagram(selectedPoint, showControlPoints, onPointSelect, dat
             ...(safeData.prediction || []),
         ];
 
-        const validQ = all.map(d => d.q).filter(q => q > 0 && !isNaN(q));
+        const validQ = [];
+        all.forEach(d => {
+            if (d.q > 0 && !isNaN(d.q)) validQ.push(d.q);
+            if (d.q25 > 0 && !isNaN(d.q25)) validQ.push(d.q25);
+            if (d.q75 > 0 && !isNaN(d.q75)) validQ.push(d.q75);
+        });
+
         const djgcPts = all.filter(d => d.phase === "DJGC").map(d => d.dj).filter(x => !isNaN(x));
         const djdcPts = all.filter(d => d.phase === "DJDC5").map(d => d.dj).filter(x => !isNaN(x));
 
