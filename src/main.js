@@ -13,7 +13,7 @@ let currentSeries = null;
 function updatePointEditorStatus() {
     const statusEl = document.getElementById("pointStatus");
     if (!selectedPoint) {
-        statusEl.textContent = "No point selected.";
+        statusEl.textContent = "Aucun point sélectionné.";
         document.getElementById("ptDj").value = "";
         document.getElementById("ptQ").value = "";
         return;
@@ -21,14 +21,14 @@ function updatePointEditorStatus() {
 
     const cfg = riverConfigs[selectedPoint.riverKey];
     const panelLabel =
-        selectedPoint.panelKey === "djgc" ? "DJGC–Q panel" : "DJDC-5–Q panel";
+        selectedPoint.panelKey === "djgc" ? "Panneau DJGC–Q" : "Panneau DJDC-5–Q";
     const zoneLabel =
         selectedPoint.zone === "greenYellow"
-            ? "green/yellow boundary"
-            : "yellow/red boundary";
+            ? "limite vert/jaune"
+            : "limite jaune/rouge";
 
     statusEl.textContent =
-        `Selected: ${cfg.label} – ${panelLabel}, ${zoneLabel}, point #${selectedPoint.index + 1
+        `Sélectionné : ${cfg.label} – ${panelLabel}, ${zoneLabel}, point #${selectedPoint.index + 1
         }`;
 }
 
@@ -132,7 +132,7 @@ document.addEventListener('DOMContentLoaded', () => {
         btn.disabled = true;
         progressEl.style.display = "block";
         statusEl.style.color = "#94a3b8";
-        statusEl.textContent = "Dispatching…";
+        statusEl.textContent = "Envoi en cours…";
 
         const headers = {
             Authorization: `Bearer ${token}`,
@@ -152,7 +152,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error(`Dispatch failed: ${dispatchRes.status} ${body.message || ""}`);
             }
 
-            statusEl.textContent = "Starting run (locating job)…";
+            statusEl.textContent = "Démarrage (recherche de la tâche)…";
             // Wait 2 seconds for GitHub to register the run
             await new Promise((r) => setTimeout(r, 2000));
 
@@ -174,7 +174,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // 3. Poll until completed
             while (status !== "completed") {
-                statusEl.textContent = `Status: ${status.replace("_", " ")}…`;
+                statusEl.textContent = `Statut : ${status.replace("_", " ")}…`;
                 await new Promise((r) => setTimeout(r, 5000)); // Poll every 5s
 
                 const pollRes = await fetch(
@@ -189,15 +189,15 @@ document.addEventListener('DOMContentLoaded', () => {
             // 4. Job finished
             if (conclusion === "success") {
                 statusEl.style.color = "#4ade80";
-                statusEl.textContent = "✓ Poll Completed successfully!";
+                statusEl.textContent = "✓ Collecte terminée avec succès !";
             } else {
                 statusEl.style.color = "#f87171";
-                statusEl.textContent = `✗ Poll failed (${conclusion})`;
+                statusEl.textContent = `✗ Échec de la collecte (${conclusion})`;
             }
 
         } catch (err) {
             statusEl.style.color = "#f87171";
-            statusEl.textContent = `✗ Error: ${err.message}`;
+            statusEl.textContent = `✗ Erreur : ${err.message}`;
         } finally {
             btn.disabled = false;
             progressEl.style.display = "none";
@@ -208,13 +208,13 @@ document.addEventListener('DOMContentLoaded', () => {
         .getElementById("updatePointBtn")
         .addEventListener("click", () => {
             if (!selectedPoint) {
-                alert("No point selected.");
+                alert("Aucun point sélectionné.");
                 return;
             }
             const newDj = parseFloat(document.getElementById("ptDj").value);
             const newQ = parseFloat(document.getElementById("ptQ").value);
             if (isNaN(newDj) || isNaN(newQ)) {
-                alert("Please enter valid numeric values for DJ and Q.");
+                alert("Veuillez entrer des valeurs numériques valides pour DJ et Q.");
                 return;
             }
 
@@ -225,7 +225,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     : cfg.djdcZones;
             const arr = zones[selectedPoint.zone];
             if (!arr || selectedPoint.index < 0 || selectedPoint.index >= arr.length) {
-                alert("Internal error: point not found.");
+                alert("Erreur interne : point introuvable.");
                 return;
             }
             // update in place, keep order

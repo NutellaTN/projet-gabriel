@@ -5,7 +5,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <!-- Firebase Modular SDK via npm (no script tags needed) -->
-    <title>Breakup Diagram – Real-time Monitoring</title>
+    <title>Diagramme de Débâcle – Surveillance en Temps Réel</title>
 </head>
 
 <body>
@@ -21,9 +21,9 @@
                     <path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"
                         stroke-linejoin="round" />
                 </svg>
-                <h1>Ice Breakup Monitor</h1>
+                <h1>Surveillance de la Débâcle</h1>
             </div>
-            <p class="subtitle">Real-time river breakup monitoring & analysis</p>
+            <p class="subtitle">Surveillance & analyse en temps réel de la débâcle des rivières</p>
         </header>
 
         <main class="dashboard-grid">
@@ -32,19 +32,19 @@
                     <div class="section-title">Configuration</div>
 
                     <div class="control-group">
-                        <label for="riverSelect">Select River</label>
+                        <label for="riverSelect">Sélectionner la rivière</label>
                         <div class="select-wrapper">
                             <select id="riverSelect">
-                                <option value="lassomption">L'Assomption River</option>
-                                <option value="montmorency">Montmorency River</option>
-                                <option value="steanne">Ste-Anne River</option>
+                                <option value="lassomption">Rivière L'Assomption</option>
+                                <option value="montmorency">Rivière Montmorency</option>
+                                <option value="steanne">Rivière Ste-Anne</option>
                             </select>
                         </div>
                     </div>
 
                     <div class="collapsible-section">
                         <details>
-                            <summary>Axis Parameters</summary>
+                            <summary>Paramètres des axes</summary>
                             <div class="grid-2">
                                 <div class="input-wrapper">
                                     <label for="qMin">Q min</label>
@@ -63,16 +63,16 @@
                                     <input type="number" id="djdcMax" step="10" />
                                 </div>
                                 <div class="input-wrapper full-width">
-                                    <label for="qBankfull">Reference Q (Bankfull)</label>
+                                    <label for="qBankfull">Q de référence (plein bord)</label>
                                     <input type="number" id="qBankfull" step="5" />
                                 </div>
                             </div>
                         </details>
                     </div>
 
-                    <div class="section-title">Data Pipeline</div>
+                    <div class="section-title">Pipeline de données</div>
                     <button type="button" id="runPollBtn" class="btn-secondary small">
-                        ▶ Run Poll Now
+                        ▶ Lancer la collecte
                     </button>
                     <span id="pollStatus" style="font-size:11px;color:#94a3b8;display:block;margin-top:4px;"></span>
                     <progress id="pollProgress"
@@ -81,43 +81,43 @@
                     <div class="divider"></div>
 
                     <button type="button" id="drawBtn" class="btn-primary">
-                        <span class="icon">↻</span> Redraw Chart
+                        <span class="icon">↻</span> Redessiner le graphique
                     </button>
 
                     <div class="divider"></div>
 
-                    <div class="section-title">View Mode</div>
+                    <div class="section-title">Mode d'affichage</div>
                     <div class="button-group">
-                        <button type="button" id="focusObservedBtn" class="btn-secondary small">Focus: Observed</button>
-                        <button type="button" id="resetViewBtn" class="btn-secondary small active">Reset / All
-                            Zones</button>
+                        <button type="button" id="focusObservedBtn" class="btn-secondary small">Focus : Observées</button>
+                        <button type="button" id="resetViewBtn" class="btn-secondary small active">Réinitialiser / Toutes les
+                            zones</button>
                     </div>
 
                     <div class="divider"></div>
 
-                    <div class="section-title">Shape Editor</div>
+                    <div class="section-title">Éditeur de formes</div>
                     <div class="button-group">
-                        <button type="button" id="showPointsBtn" class="btn-secondary small">Show Points</button>
-                        <button type="button" id="hidePointsBtn" class="btn-secondary small">Hide</button>
+                        <button type="button" id="showPointsBtn" class="btn-secondary small">Afficher les points</button>
+                        <button type="button" id="hidePointsBtn" class="btn-secondary small">Masquer</button>
                     </div>
 
                     <div class="control-group box-style">
                         <div class="grid-2">
                             <div class="input-wrapper">
-                                <label for="ptDj">DJ Point</label>
+                                <label for="ptDj">Point DJ</label>
                                 <input type="number" id="ptDj" step="1" placeholder="-" />
                             </div>
                             <div class="input-wrapper">
-                                <label for="ptQ">Q Point</label>
+                                <label for="ptQ">Point Q</label>
                                 <input type="number" id="ptQ" step="1" placeholder="-" />
                             </div>
                         </div>
-                        <button type="button" id="updatePointBtn" class="btn-accent">Update Point</button>
+                        <button type="button" id="updatePointBtn" class="btn-accent">Mettre à jour le point</button>
 
                         <div class="nav-buttons">
-                            <button type="button" id="moveLeftBtn" class="btn-icon" title="Previous Point">←</button>
-                            <span id="pointStatus">Select a point</span>
-                            <button type="button" id="moveRightBtn" class="btn-icon" title="Next Point">→</button>
+                            <button type="button" id="moveLeftBtn" class="btn-icon" title="Point précédent">←</button>
+                            <span id="pointStatus">Sélectionner un point</span>
+                            <button type="button" id="moveRightBtn" class="btn-icon" title="Point suivant">→</button>
                         </div>
                     </div>
                 </form>
@@ -125,12 +125,12 @@
 
             <section class="visualizer glass-panel">
                 <div class="visualizer-header">
-                    <h2>Breakup Diagram</h2>
+                    <h2>Diagramme de Débâcle</h2>
                     <div class="legend">
-                        <span class="legend-item"><span class="dot green"></span> Safe</span>
-                        <span class="legend-item"><span class="dot yellow"></span> Monitor</span>
-                        <span class="legend-item"><span class="dot red"></span> Critical</span>
-                        <span class="legend-item"><span class="line-icon blue"></span> Observed</span>
+                        <span class="legend-item"><span class="dot green"></span> Sécuritaire</span>
+                        <span class="legend-item"><span class="dot yellow"></span> Surveiller</span>
+                        <span class="legend-item"><span class="dot red"></span> Critique</span>
+                        <span class="legend-item"><span class="line-icon blue"></span> Observées</span>
                     </div>
                 </div>
                 <div class="chart-container">

@@ -1,6 +1,6 @@
 export const riverConfigs = {
     lassomption: {
-        label: "L'Assomption River",
+        label: "Rivière L'Assomption",
         qMin: 5,
         qMax: 500,
         djgcMax: 1300,
@@ -45,7 +45,7 @@ export const riverConfigs = {
     },
 
     montmorency: {
-        label: "Montmorency River",
+        label: "Rivière Montmorency",
         qMin: 5,
         qMax: 450,
         djgcMax: 1100,
@@ -76,7 +76,7 @@ export const riverConfigs = {
     },
 
     steanne: {
-        label: "Ste-Anne River",
+        label: "Rivière Ste-Anne",
         qMin: 5,
         qMax: 400,
         djgcMax: 1000,
