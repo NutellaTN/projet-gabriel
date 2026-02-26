@@ -2,8 +2,7 @@ name: Daily Data Poll
 
 on:
   schedule:
-    # 13:00 UTC = 08:00 AM EST (standard) / 09:00 AM EDT (daylight)
-    - cron: '0 13 * * *'
+    - cron: '0 12 * * *'
   workflow_dispatch:
 
 jobs:
