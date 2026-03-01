@@ -82,8 +82,8 @@ function processSeasonData(data, callback) {
             date: dateKey,
             dj: item.dj,
             q: item.q,
-            q25: item.p25,
-            q75: item.p75,
+            q25: item.p25 !== undefined ? item.p25 : item.q,
+            q75: item.p75 !== undefined ? item.p75 : item.q,
             phase: predData.phase || "DJDC5"
         };
     });

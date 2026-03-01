@@ -600,11 +600,46 @@ export function drawDiagram(selectedPoint, showControlPoints, onPointSelect, dat
         qBank: configQBank
     };
 
+    function filterLeadingZeros(pts) {
+        if (!pts || pts.length === 0) return pts;
+        const firstNonZero = pts.findIndex(p => p.dj !== 0);
+        if (firstNonZero === -1) return pts.slice(-1);
+        if (firstNonZero > 0) return pts.slice(firstNonZero - 1);
+        return pts;
+    }
+
+    let chartData = data;
+    if (data) {
+        if (Array.isArray(data)) {
+            const histDJGC = data.filter(d => d.phase === "DJGC");
+            const histDJDC = data.filter(d => d.phase === "DJDC5");
+            const otherHist = data.filter(d => d.phase !== "DJGC" && d.phase !== "DJDC5");
+            chartData = [
+                ...filterLeadingZeros(histDJGC),
+                ...filterLeadingZeros(histDJDC),
+                ...otherHist
+            ];
+        } else if (typeof data === 'object' && data.historical) {
+            const histDJGC = data.historical.filter(d => d.phase === "DJGC");
+            const histDJDC = data.historical.filter(d => d.phase === "DJDC5");
+            const otherHist = data.historical.filter(d => d.phase !== "DJGC" && d.phase !== "DJDC5");
+
+            chartData = {
+                ...data,
+                historical: [
+                    ...filterLeadingZeros(histDJGC),
+                    ...filterLeadingZeros(histDJDC),
+                    ...otherHist
+                ]
+            };
+        }
+    }
+
     const isFocused = document.getElementById("focusObservedBtn")?.classList.contains("active");
 
-    if (isFocused && data) {
-        const safeData = data || {};
-        const all = [
+    if (isFocused && chartData) {
+        const safeData = chartData || {};
+        const all = Array.isArray(chartData) ? chartData : [
             ...(safeData.historical || []),
             ...(safeData.latest ? [safeData.latest] : []),
             // include median prediction line
@@ -625,8 +660,8 @@ export function drawDiagram(selectedPoint, showControlPoints, onPointSelect, dat
             const rawMin = d3.min(validQ);
             const rawMax = d3.max(validQ);
             // Multiplicative padding on log scale
-            limits.qMin = Math.max(configQMin, rawMin / 1.5);
-            limits.qMax = Math.min(configQMax, rawMax * 1.5);
+            limits.qMin = rawMin / 1.5;
+            limits.qMax = rawMax * 1.5;
         }
 
         if (djgcPts.length > 0) {
@@ -646,5 +681,5 @@ export function drawDiagram(selectedPoint, showControlPoints, onPointSelect, dat
         }
     }
 
-    renderChart("diagram", limits, data, showControlPoints, selectedPoint, onPointSelect, riverKey, cfg);
+    renderChart("diagram", limits, chartData, showControlPoints, selectedPoint, onPointSelect, riverKey, cfg);
 }
