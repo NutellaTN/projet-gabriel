@@ -21,58 +21,59 @@
                     <path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"
                         stroke-linejoin="round" />
                 </svg>
-                <h1>Surveillance de la Débâcle</h1>
+                <h1 data-i18n="app.title">Surveillance de la Débâcle</h1>
             </div>
-            <p class="subtitle">Surveillance & analyse en temps réel de la débâcle des rivières</p>
+            <button id="langToggleBtn" class="btn-secondary small" style="margin-left:auto;">EN</button>
         </header>
 
         <main class="dashboard-grid">
             <aside class="sidebar glass-panel">
                 <form id="configForm">
-                    <div class="section-title">Configuration</div>
+                    <div class="section-title" data-i18n="sidebar.config">Configuration</div>
 
                     <div class="control-group">
-                        <label for="riverSelect">Sélectionner la rivière</label>
+                        <label for="riverSelect" data-i18n="config.riverSelect">Sélectionner la rivière</label>
                         <div class="select-wrapper">
                             <select id="riverSelect">
-                                <option value="lassomption">Rivière L'Assomption</option>
-                                <option value="montmorency">Rivière Montmorency</option>
-                                <option value="steanne">Rivière Ste-Anne</option>
+                                <option value="lassomption" data-i18n="river.lassomption">Rivière L'Assomption</option>
+                                <option value="montmorency" data-i18n="river.montmorency">Rivière Montmorency</option>
+                                <option value="steanne" data-i18n="river.steanne">Rivière Ste-Anne</option>
                             </select>
                         </div>
                     </div>
 
                     <div class="collapsible-section">
                         <details>
-                            <summary>Paramètres des axes</summary>
+                            <summary data-i18n="config.axisParams">Paramètres des axes</summary>
                             <div class="grid-2">
                                 <div class="input-wrapper">
-                                    <label for="qMin">Q min</label>
+                                    <label for="qMin" data-i18n="config.qMin">Q min</label>
                                     <input type="number" id="qMin" step="1" />
                                 </div>
                                 <div class="input-wrapper">
-                                    <label for="qMax">Q max</label>
+                                    <label for="qMax" data-i18n="config.qMax">Q max</label>
                                     <input type="number" id="qMax" step="10" />
                                 </div>
                                 <div class="input-wrapper">
-                                    <label for="djgcMax">DJGC max</label>
+                                    <label for="djgcMax" data-i18n="config.djgcMax">DJGC max</label>
                                     <input type="number" id="djgcMax" step="50" />
                                 </div>
                                 <div class="input-wrapper">
-                                    <label for="djdcMax">DJDC-5 max</label>
+                                    <label for="djdcMax" data-i18n="config.djdcMax">DJDC-5 max</label>
                                     <input type="number" id="djdcMax" step="10" />
                                 </div>
                                 <div class="input-wrapper full-width">
-                                    <label for="qBankfull">Q de référence (plein bord)</label>
+                                    <label for="qBankfull" data-i18n="config.qBankfull">Q de référence (plein
+                                        bord)</label>
                                     <input type="number" id="qBankfull" step="5" />
                                 </div>
                             </div>
                         </details>
                     </div>
 
-                    <div class="section-title">Pipeline de données</div>
+                    <div class="section-title" data-i18n="sidebar.pipeline">Pipeline de données</div>
                     <button type="button" id="runPollBtn" class="btn-secondary small">
-                        ▶ Lancer la collecte
+                        <span data-i18n="pipeline.startBtn">▶ Lancer la collecte</span>
                     </button>
                     <span id="pollStatus" style="font-size:11px;color:#94a3b8;display:block;margin-top:4px;"></span>
                     <progress id="pollProgress"
@@ -81,42 +82,46 @@
                     <div class="divider"></div>
 
                     <button type="button" id="drawBtn" class="btn-primary">
-                        <span class="icon">↻</span> Redessiner le graphique
+                        <span class="icon">↻</span> <span data-i18n="btn.redraw">Redessiner le graphique</span>
                     </button>
 
                     <div class="divider"></div>
 
-                    <div class="section-title">Mode d'affichage</div>
+                    <div class="section-title" data-i18n="sidebar.viewMode">Mode d'affichage</div>
                     <div class="button-group">
-                        <button type="button" id="focusObservedBtn" class="btn-secondary small">Focus : Observées</button>
-                        <button type="button" id="resetViewBtn" class="btn-secondary small active">Réinitialiser / Toutes les
-                            zones</button>
+                        <button type="button" id="focusObservedBtn" class="btn-secondary small"
+                            data-i18n="viewMode.focus">Focus : Observées</button>
+                        <button type="button" id="resetViewBtn" class="btn-secondary small active"
+                            data-i18n="viewMode.reset">Réinitialiser / Toutes les zones</button>
                     </div>
 
                     <div class="divider"></div>
 
-                    <div class="section-title">Éditeur de formes</div>
+                    <div class="section-title" data-i18n="sidebar.pointEditor">Éditeur de formes</div>
                     <div class="button-group">
-                        <button type="button" id="showPointsBtn" class="btn-secondary small">Afficher les points</button>
-                        <button type="button" id="hidePointsBtn" class="btn-secondary small">Masquer</button>
+                        <button type="button" id="showPointsBtn" class="btn-secondary small"
+                            data-i18n="editor.showPoints">Afficher les points</button>
+                        <button type="button" id="hidePointsBtn" class="btn-secondary small"
+                            data-i18n="editor.hidePoints">Masquer</button>
                     </div>
 
                     <div class="control-group box-style">
                         <div class="grid-2">
                             <div class="input-wrapper">
-                                <label for="ptDj">Point DJ</label>
+                                <label for="ptDj" data-i18n="editor.ptDj">Point DJ</label>
                                 <input type="number" id="ptDj" step="1" placeholder="-" />
                             </div>
                             <div class="input-wrapper">
-                                <label for="ptQ">Point Q</label>
+                                <label for="ptQ" data-i18n="editor.ptQ">Point Q</label>
                                 <input type="number" id="ptQ" step="1" placeholder="-" />
                             </div>
                         </div>
-                        <button type="button" id="updatePointBtn" class="btn-accent">Mettre à jour le point</button>
+                        <button type="button" id="updatePointBtn" class="btn-accent" data-i18n="editor.updateBtn">Mettre
+                            à jour le point</button>
 
                         <div class="nav-buttons">
                             <button type="button" id="moveLeftBtn" class="btn-icon" title="Point précédent">←</button>
-                            <span id="pointStatus">Sélectionner un point</span>
+                            <span id="pointStatus" data-i18n="editor.status.none">Aucun point sélectionné.</span>
                             <button type="button" id="moveRightBtn" class="btn-icon" title="Point suivant">→</button>
                         </div>
                     </div>
@@ -125,12 +130,16 @@
 
             <section class="visualizer glass-panel">
                 <div class="visualizer-header">
-                    <h2>Diagramme de Débâcle</h2>
+                    <h2 data-i18n="chart.title">Diagramme de Débâcle</h2>
                     <div class="legend">
-                        <span class="legend-item"><span class="dot green"></span> Sécuritaire</span>
-                        <span class="legend-item"><span class="dot yellow"></span> Surveiller</span>
-                        <span class="legend-item"><span class="dot red"></span> Critique</span>
-                        <span class="legend-item"><span class="line-icon blue"></span> Observées</span>
+                        <span class="legend-item"><span class="dot green"></span> <span
+                                data-i18n="legend.safe">Sécuritaire</span></span>
+                        <span class="legend-item"><span class="dot yellow"></span> <span
+                                data-i18n="legend.monitor">Surveiller</span></span>
+                        <span class="legend-item"><span class="dot red"></span> <span
+                                data-i18n="legend.critical">Critique</span></span>
+                        <span class="legend-item"><span class="line-icon blue"></span> <span
+                                data-i18n="legend.observed">Observées</span></span>
                     </div>
                 </div>
                 <div class="chart-container">

@@ -2,6 +2,7 @@ import './style.css';
 import { riverConfigs } from './river-data.js';
 import { drawDiagram } from './chart.js';
 import { subscribeToSeasonData } from './firestore-service.js';
+import { t, setLanguage, getCurrentLanguage, translateDOM } from './i18n.js';
 
 import './firebase-config.js'; // Initialize Firebase
 
@@ -13,23 +14,28 @@ let currentSeries = null;
 function updatePointEditorStatus() {
     const statusEl = document.getElementById("pointStatus");
     if (!selectedPoint) {
-        statusEl.textContent = "Aucun point sélectionné.";
+        statusEl.textContent = t("editor.status.none");
         document.getElementById("ptDj").value = "";
         document.getElementById("ptQ").value = "";
         return;
     }
 
     const cfg = riverConfigs[selectedPoint.riverKey];
+    const riverName = t(`river.${selectedPoint.riverKey}`) || cfg.label;
+
     const panelLabel =
-        selectedPoint.panelKey === "djgc" ? "Panneau DJGC–Q" : "Panneau DJDC-5–Q";
+        selectedPoint.panelKey === "djgc" ? t("editor.panel.djgc") : t("editor.panel.djdc");
     const zoneLabel =
         selectedPoint.zone === "greenYellow"
-            ? "limite vert/jaune"
-            : "limite jaune/rouge";
+            ? t("editor.zone.greenYellow")
+            : t("editor.zone.yellowRed");
 
-    statusEl.textContent =
-        `Sélectionné : ${cfg.label} – ${panelLabel}, ${zoneLabel}, point #${selectedPoint.index + 1
-        }`;
+    statusEl.textContent = t("editor.status.selected", {
+        river: riverName,
+        panel: panelLabel,
+        zone: zoneLabel,
+        index: selectedPoint.index + 1
+    });
 }
 
 function onPointSelect(pt) {
@@ -72,6 +78,16 @@ async function loadRiverConfig(key) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+    // Internationalization initialization
+    translateDOM();
+
+    document.getElementById("langToggleBtn").addEventListener("click", () => {
+        const nextLang = getCurrentLanguage() === 'fr' ? 'en' : 'fr';
+        setLanguage(nextLang);
+        updatePointEditorStatus();
+        drawDiagram(selectedPoint, showControlPoints, onPointSelect, currentSeries);
+    });
+
     // Initial river: L'Assomption
     loadRiverConfig("lassomption");
 
@@ -125,14 +141,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const token = import.meta.env.VITE_GITHUB_PAT;
         if (!token) {
             statusEl.style.color = "#f87171";
-            statusEl.textContent = "⚠ VITE_GITHUB_PAT not set in .env";
+            statusEl.textContent = t("pipeline.status.notoken");
             return;
         }
 
         btn.disabled = true;
         progressEl.style.display = "block";
         statusEl.style.color = "#94a3b8";
-        statusEl.textContent = "Envoi en cours…";
+        statusEl.textContent = t("pipeline.status.pending");
 
         const headers = {
             Authorization: `Bearer ${token}`,
@@ -152,7 +168,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error(`Dispatch failed: ${dispatchRes.status} ${body.message || ""}`);
             }
 
-            statusEl.textContent = "Démarrage (recherche de la tâche)…";
+            statusEl.textContent = t("pipeline.status.starting");
             // Wait 2 seconds for GitHub to register the run
             await new Promise((r) => setTimeout(r, 2000));
 
@@ -174,7 +190,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // 3. Poll until completed
             while (status !== "completed") {
-                statusEl.textContent = `Statut : ${status.replace("_", " ")}…`;
+                statusEl.textContent = t("pipeline.status.running", { status: status.replace("_", " ") });
                 await new Promise((r) => setTimeout(r, 5000)); // Poll every 5s
 
                 const pollRes = await fetch(
@@ -189,15 +205,15 @@ document.addEventListener('DOMContentLoaded', () => {
             // 4. Job finished
             if (conclusion === "success") {
                 statusEl.style.color = "#4ade80";
-                statusEl.textContent = "✓ Collecte terminée avec succès !";
+                statusEl.textContent = t("pipeline.status.success");
             } else {
                 statusEl.style.color = "#f87171";
-                statusEl.textContent = `✗ Échec de la collecte (${conclusion})`;
+                statusEl.textContent = t("pipeline.status.failure", { conclusion });
             }
 
         } catch (err) {
             statusEl.style.color = "#f87171";
-            statusEl.textContent = `✗ Erreur : ${err.message}`;
+            statusEl.textContent = t("pipeline.status.error", { message: err.message });
         } finally {
             btn.disabled = false;
             progressEl.style.display = "none";
@@ -208,13 +224,13 @@ document.addEventListener('DOMContentLoaded', () => {
         .getElementById("updatePointBtn")
         .addEventListener("click", () => {
             if (!selectedPoint) {
-                alert("Aucun point sélectionné.");
+                alert(t("editor.alert.none"));
                 return;
             }
             const newDj = parseFloat(document.getElementById("ptDj").value);
             const newQ = parseFloat(document.getElementById("ptQ").value);
             if (isNaN(newDj) || isNaN(newQ)) {
-                alert("Veuillez entrer des valeurs numériques valides pour DJ et Q.");
+                alert(t("editor.alert.invalid"));
                 return;
             }
 
@@ -225,7 +241,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     : cfg.djdcZones;
             const arr = zones[selectedPoint.zone];
             if (!arr || selectedPoint.index < 0 || selectedPoint.index >= arr.length) {
-                alert("Erreur interne : point introuvable.");
+                alert(t("editor.alert.error"));
                 return;
             }
             // update in place, keep order

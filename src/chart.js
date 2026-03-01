@@ -1,5 +1,6 @@
 import * as d3 from 'd3';
 import { riverConfigs } from './river-data.js';
+import { t } from './i18n.js';
 
 const margin = { top: 20, right: 70, bottom: 60, left: 70 };
 const midGap = 10;
@@ -543,7 +544,7 @@ function renderChart(svgId, limits, data, showControlPoints, selectedPoint, onPo
             pG.append("path")
                 .datum(prediction)
                 .attr("fill", "none")
-                .attr("stroke", "#2563eb") // Blue-600
+                .attr("stroke", "#000000") // Black colored median line
                 .attr("stroke-width", 2)
                 .attr("d", lineGen);
         }
@@ -562,7 +563,7 @@ function renderChart(svgId, limits, data, showControlPoints, selectedPoint, onPo
         .attr("y", panelHeight + 45)
         .attr("text-anchor", "middle")
         .attr("font-size", 12)
-        .text("DJGC (°C·d)");
+        .text(t("axis.djgc"));
 
     gRight
         .append("text")
@@ -570,7 +571,7 @@ function renderChart(svgId, limits, data, showControlPoints, selectedPoint, onPo
         .attr("y", panelHeight + 45)
         .attr("text-anchor", "middle")
         .attr("font-size", 12)
-        .text("DJDC -5 °C (°C·d)");
+        .text(t("axis.djdc"));
 
     gLeft
         .append("text")
@@ -579,7 +580,7 @@ function renderChart(svgId, limits, data, showControlPoints, selectedPoint, onPo
         .attr("y", -50)
         .attr("text-anchor", "middle")
         .attr("font-size", 12)
-        .text("Q (m³/s)");
+        .text(t("axis.q"));
 }
 
 export function drawDiagram(selectedPoint, showControlPoints, onPointSelect, data) {
