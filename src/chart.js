@@ -510,7 +510,30 @@ function renderChart(svgId, limits, data, showControlPoints, selectedPoint, onPo
     // Prediction might cross phases? Usually 7-day is same phase. 
     // If it crosses, we'd need to split it. Assuming same phase for now as per `poll_daily` logic.
     if (prediction.length > 0) {
-        const predPhase = prediction[0].phase;
+        let activePrediction = [...prediction];
+        const predPhase = activePrediction[0].phase;
+
+        let connectPt = null;
+        if (latest && latest.phase === predPhase) {
+            connectPt = latest;
+        } else {
+            const hPts = historical.filter(d => d.phase === predPhase);
+            if (hPts.length > 0) {
+                connectPt = hPts[hPts.length - 1];
+            }
+        }
+
+        if (connectPt && activePrediction[0].dj > connectPt.dj) {
+            activePrediction.unshift({
+                date: connectPt.date || "connect",
+                dj: connectPt.dj,
+                q: connectPt.q,
+                q25: connectPt.q, // Narrow area to an exact point here
+                q75: connectPt.q,
+                phase: connectPt.phase
+            });
+        }
+
         let pG = null;
         let pX = null;
         if (predPhase === "DJGC") {
@@ -530,7 +553,7 @@ function renderChart(svgId, limits, data, showControlPoints, selectedPoint, onPo
                 .y1(d => y(d.q75));
 
             pG.append("path")
-                .datum(prediction)
+                .datum(activePrediction)
                 .attr("fill", "#3b82f6") // Blue-500
                 .attr("fill-opacity", 0.3)
                 .attr("d", areaGen);
@@ -542,7 +565,7 @@ function renderChart(svgId, limits, data, showControlPoints, selectedPoint, onPo
                 .y(d => y(d.q));
 
             pG.append("path")
-                .datum(prediction)
+                .datum(activePrediction)
                 .attr("fill", "none")
                 .attr("stroke", "#000000") // Black colored median line
                 .attr("stroke-width", 2)
