@@ -614,7 +614,7 @@ export function drawDiagram(selectedPoint, showControlPoints, onPointSelect, dat
     const configQMax = parseFloat(document.getElementById("qMax").value) || cfg.qMax;
     const configDJGCMax = parseFloat(document.getElementById("djgcMax").value) || cfg.djgcMax;
     const configDJDCMax = parseFloat(document.getElementById("djdcMax").value) || cfg.djdcMax;
-    const configQBank = parseFloat(document.getElementById("qBankfull").value) || cfg.qBankfull;
+    const configQBank = cfg.qBankfull;
 
     let limits = {
         qMin: configQMin, qMax: configQMax,

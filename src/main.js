@@ -99,6 +99,14 @@ document.addEventListener('DOMContentLoaded', () => {
         drawDiagram(selectedPoint, showControlPoints, onPointSelect, currentSeries);
     });
 
+    document.getElementById("updateQBankfullBtn").addEventListener("click", () => {
+        const qBankfullVal = parseFloat(document.getElementById("qBankfull").value);
+        if (!isNaN(qBankfullVal)) {
+            riverConfigs[document.getElementById("riverSelect").value].qBankfull = qBankfullVal;
+        }
+        drawDiagram(selectedPoint, showControlPoints, onPointSelect, currentSeries);
+    });
+
     document.getElementById("showPointsBtn")
         .addEventListener("click", () => {
             showControlPoints = true;

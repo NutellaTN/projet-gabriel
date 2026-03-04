@@ -62,14 +62,15 @@
                                     <label for="djdcMax" data-i18n="config.djdcMax">DJDC-5 max</label>
                                     <input type="number" id="djdcMax" step="10" />
                                 </div>
-                                <div class="input-wrapper full-width">
-                                    <label for="qBankfull" data-i18n="config.qBankfull">Q de référence (plein
-                                        bord)</label>
-                                    <input type="number" id="qBankfull" step="5" />
-                                </div>
                             </div>
                         </details>
                     </div>
+
+                    <button type="button" id="drawBtn" class="btn-primary" style="margin-top: 16px;">
+                        <span data-i18n="btn.redraw">Redessiner le graphique</span>
+                    </button>
+
+                    <div class="divider"></div>
 
                     <div class="section-title" data-i18n="sidebar.pipeline">Pipeline de données</div>
                     <button type="button" id="runPollBtn" class="btn-secondary small">
@@ -78,12 +79,6 @@
                     <span id="pollStatus" style="font-size:11px;color:#94a3b8;display:block;margin-top:4px;"></span>
                     <progress id="pollProgress"
                         style="display:none; width:100%; margin-top:8px; height:6px;"></progress>
-
-                    <div class="divider"></div>
-
-                    <button type="button" id="drawBtn" class="btn-primary">
-                        <span data-i18n="btn.redraw">Redessiner le graphique</span>
-                    </button>
 
                     <div class="divider"></div>
 
@@ -103,6 +98,20 @@
                             data-i18n="editor.showPoints">Afficher les points</button>
                         <button type="button" id="hidePointsBtn" class="btn-secondary small"
                             data-i18n="editor.hidePoints">Masquer</button>
+                    </div>
+
+                    <div class="control-group" style="margin-top: 16px;">
+                        <div class="input-wrapper full-width">
+                            <label for="qBankfull" data-i18n="config.qBankfull">Q de référence (plein
+                                bord)</label>
+                            <div style="display: flex; gap: 8px; width: 100%;">
+                                <input type="number" id="qBankfull" step="5" style="flex: 1;" />
+                                <button type="button" id="updateQBankfullBtn" class="btn-secondary small"
+                                    style="white-space: nowrap;">
+                                    <span data-i18n="editor.updateLineBtn">Mettre à jour la ligne</span>
+                                </button>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="control-group box-style">
