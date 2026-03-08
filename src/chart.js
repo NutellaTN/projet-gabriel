@@ -523,7 +523,7 @@ function renderChart(svgId, limits, data, showControlPoints, selectedPoint, onPo
             }
         }
 
-        if (connectPt && activePrediction[0].dj > connectPt.dj) {
+        if (connectPt) {
             activePrediction.unshift({
                 date: connectPt.date || "connect",
                 dj: connectPt.dj,
@@ -545,18 +545,62 @@ function renderChart(svgId, limits, data, showControlPoints, selectedPoint, onPo
         }
 
         if (pG) {
-            // Area
-            const areaGen = d3.area()
-                .defined(d => !isNaN(d.dj) && !isNaN(d.q25) && !isNaN(d.q75) && d.q25 > 0 && d.q75 > 0)
+            // Segment-by-segment band drawing to handle decreasing DJ values
+            // and avoid the global self-folding polygon artifact caused by d3.area().
+            for (let i = 0; i < activePrediction.length - 1; i++) {
+                const a = activePrediction[i];
+                const b = activePrediction[i + 1];
+
+                const isValid = (pt) => !isNaN(pt.dj) && !isNaN(pt.q25) && !isNaN(pt.q75) && pt.q25 > 0 && pt.q75 > 0;
+
+                if (isValid(a) && isValid(b)) {
+                    const quad = [
+                        { dj: a.dj, q: a.q25 },
+                        { dj: b.dj, q: b.q25 },
+                        { dj: b.dj, q: b.q75 },
+                        { dj: a.dj, q: a.q75 }
+                    ];
+
+                    const quadPath = d3.line()
+                        .x(d => pX(d.dj))
+                        .y(d => y(d.q));
+
+                    pG.append("path")
+                        .datum(quad)
+                        .attr("fill", "#3b82f6") // Blue-500
+                        .attr("fill-opacity", 0.3)
+                        .attr("d", quadPath(quad) + "Z")
+                        .attr("stroke", "none");
+                }
+            }
+
+            // Boundary line for q25
+            const lineGenQ25 = d3.line()
+                .defined(d => !isNaN(d.dj) && !isNaN(d.q25) && d.q25 > 0)
                 .x(d => pX(d.dj))
-                .y0(d => y(d.q25))
-                .y1(d => y(d.q75));
+                .y(d => y(d.q25));
 
             pG.append("path")
                 .datum(activePrediction)
-                .attr("fill", "#3b82f6") // Blue-500
-                .attr("fill-opacity", 0.3)
-                .attr("d", areaGen);
+                .attr("fill", "none")
+                .attr("stroke", "#3b82f6")
+                .attr("stroke-opacity", 0.3)
+                .attr("stroke-width", 1)
+                .attr("d", lineGenQ25);
+
+            // Boundary line for q75
+            const lineGenQ75 = d3.line()
+                .defined(d => !isNaN(d.dj) && !isNaN(d.q75) && d.q75 > 0)
+                .x(d => pX(d.dj))
+                .y(d => y(d.q75));
+
+            pG.append("path")
+                .datum(activePrediction)
+                .attr("fill", "none")
+                .attr("stroke", "#3b82f6")
+                .attr("stroke-opacity", 0.3)
+                .attr("stroke-width", 1)
+                .attr("d", lineGenQ75);
 
             // Line (Median)
             const lineGen = d3.line()
