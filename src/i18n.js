@@ -67,7 +67,7 @@ export const translations = {
         // Rivers
         "river.lassomption": "Rivière L'Assomption",
         "river.montmorency": "Rivière Montmorency",
-        "river.steanne": "Rivière Ste-Anne"
+        "river.chaudiere": "Rivière Chaudière"
     },
     en: {
         // Navbar
