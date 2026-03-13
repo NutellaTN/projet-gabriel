@@ -678,26 +678,17 @@ export function drawDiagram(selectedPoint, showControlPoints, onPointSelect, dat
     let chartData = data;
     if (data) {
         if (Array.isArray(data)) {
-            const histDJGC = data.filter(d => d.phase === "DJGC");
-            const histDJDC = data.filter(d => d.phase === "DJDC5");
-            const otherHist = data.filter(d => d.phase !== "DJGC" && d.phase !== "DJDC5");
-            chartData = [
-                ...filterLeadingZeros(histDJGC),
-                ...filterLeadingZeros(histDJDC),
-                ...otherHist
-            ];
+            const phases = [...new Set(data.map(d => d.phase))];
+            chartData = phases.flatMap(phase => 
+                filterLeadingZeros(data.filter(d => d.phase === phase))
+            );
         } else if (typeof data === 'object' && data.historical) {
-            const histDJGC = data.historical.filter(d => d.phase === "DJGC");
-            const histDJDC = data.historical.filter(d => d.phase === "DJDC5");
-            const otherHist = data.historical.filter(d => d.phase !== "DJGC" && d.phase !== "DJDC5");
-
+            const phases = [...new Set(data.historical.map(d => d.phase))];
             chartData = {
                 ...data,
-                historical: [
-                    ...filterLeadingZeros(histDJGC),
-                    ...filterLeadingZeros(histDJDC),
-                    ...otherHist
-                ]
+                historical: phases.flatMap(phase => 
+                    filterLeadingZeros(data.historical.filter(d => d.phase === phase))
+                )
             };
         }
     }
