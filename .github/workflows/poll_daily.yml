@@ -28,4 +28,7 @@ jobs:
           FIREBASE_SA_JSON_B64: ${{ secrets.FIREBASE_SA_JSON_B64 }}
           FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
           ECCC_CITY_ID: ${{ vars.ECCC_CITY_ID }}
-        run: python scripts/poll_daily.py
+        run: |
+          python scripts/poll_daily.py --station lassomption
+          python scripts/poll_daily.py --station montmorency
+          python scripts/poll_daily.py --station chaudiere

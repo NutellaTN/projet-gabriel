@@ -45,17 +45,25 @@ except ImportError:
 # CONSTANTS
 # ═══════════════════════════════════════════════════════════════════════════════
 FIREBASE_SA_ENV_VAR = "FIREBASE_SA_JSON_B64"
-STATION_KEY         = "lassomption"
 SEASON              = "2025_26"
-CEHQ_STATION        = "052219"
+
+RIVERS = {
+    "lassomption": {"cehq": "052219", "climate_id": "7014160", "lat": 45.81, "lon": -73.43},
+    "montmorency": {"cehq": "051001", "climate_id": "7010565", "lat": 46.837, "lon": -71.197},
+    "chaudiere": {"cehq": "023429", "climate_id": "7028754", "lat": 46.205, "lon": -70.785},
+}
+
+# Values overridden in main()
+STATION_KEY  = "lassomption"
+CEHQ_STATION = "052219"
+LAT          = 45.81
+LON          = -73.43
+CLIMATE_ID   = "7014160"
 
 # MSC API
 MSC_BASE_URL = "https://api.weather.gc.ca"
 MSC_UA       = "poll-daily/2.0 (+https://github.com/projet-gabriel)"
 
-# Location (L'Assomption, QC)
-LAT        = 45.81
-LON        = -73.43
 RADIUS_KM  = 80.0
 MSC_LANG   = "en"
 QUEBEC_TZ  = "America/Montreal"
@@ -586,14 +594,23 @@ def compute_djdc_array(mean_by_date: Dict[str, float]) -> Dict[str, float]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Poll daily data and push to Firestore.")
+    parser.add_argument("--station", default="lassomption", choices=RIVERS.keys(), help="Station key")
     parser.add_argument("--start", default="2026-02-15", help="Start date for DJDC-5 accumulation (YYYY-MM-DD)")
     parser.add_argument("--dry-run", action="store_true", help="Do not write to Firestore")
     args = parser.parse_args()
 
+    global STATION_KEY, CEHQ_STATION, LAT, LON, CLIMATE_ID
+    cfg = RIVERS[args.station]
+    STATION_KEY = args.station
+    CEHQ_STATION = cfg["cehq"]
+    LAT = cfg["lat"]
+    LON = cfg["lon"]
+    CLIMATE_ID = cfg["climate_id"]
+
     # 1. Historical Temp
     yesterday = (datetime.datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
-    print(f"Fetching climate-daily from {args.start} to {yesterday}...")
-    hist_temp = fetch_climate_daily("7014160", args.start, yesterday)
+    print(f"Fetching climate-daily from {args.start} to {yesterday} for {STATION_KEY}...")
+    hist_temp = fetch_climate_daily(CLIMATE_ID, args.start, yesterday)
 
     # 2. Future Temp (forecast)
     future_temp = get_realtime_and_forecast_temps()

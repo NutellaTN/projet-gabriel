@@ -70,3 +70,9 @@ dist/
 
 # dataconnect generated files
 .dataconnect
+
+# GeoMet-OGC-RIL
+GeoMet-OGC-RIL/
+
+# Scripts
+scripts/inject_historic.py

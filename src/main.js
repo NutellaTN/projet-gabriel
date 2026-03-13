@@ -55,6 +55,8 @@ function onPointSelect(pt) {
 async function loadRiverConfig(key) {
     const cfg = riverConfigs[key];
     if (!cfg) return;
+
+    // Reset editor UI
     document.getElementById("qMin").value = cfg.qMin;
     document.getElementById("qMax").value = cfg.qMax;
     document.getElementById("djgcMax").value = cfg.djgcMax;
@@ -63,17 +65,21 @@ async function loadRiverConfig(key) {
     selectedPoint = null;
     updatePointEditorStatus();
 
-    if (key === 'lassomption') {
-        const unsubscribe = subscribeToSeasonData(key, (data) => {
-            currentSeries = data;
-            drawDiagram(selectedPoint, showControlPoints, onPointSelect, currentSeries);
-        });
-        // Note: unsubscribe is not handled on river switch in this simple version, 
-        // but for a single river app it's fine.
-    } else {
-        currentSeries = null;
+    // Reset current series to clear the chart before the new data arrives
+    currentSeries = null;
+
+    // Unsubscribe from previous listener if it exists
+    if (window.currentFirebaseListener) {
+        window.currentFirebaseListener();
     }
 
+    // Subscribe to the new river's Firestore document
+    window.currentFirebaseListener = subscribeToSeasonData(key, (data) => {
+        currentSeries = data;
+        drawDiagram(selectedPoint, showControlPoints, onPointSelect, currentSeries);
+    });
+
+    // Initial draw while waiting for Firebase payload
     drawDiagram(selectedPoint, showControlPoints, onPointSelect, currentSeries);
 }
 
