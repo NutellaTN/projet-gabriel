@@ -51,6 +51,17 @@ RIVERS = {
     "lassomption": {"cehq": "052219", "climate_id": "7014160", "lat": 45.81, "lon": -73.43},
     "montmorency": {"cehq": "051001", "climate_id": "7010565", "lat": 46.837, "lon": -71.197},
     "chaudiere": {"cehq": "023429", "climate_id": "7028754", "lat": 46.205, "lon": -70.785},
+    "chateauguay": {"cehq": "030905", "climate_id": "7027039", "lat": 45.167222, "lon": -73.678889},
+    "matane": {"cehq": "021601", "climate_id": "7051201", "lat": 48.308632, "lon": -67.252525},
+    "matapedia": {"cehq": "011509", "climate_id": "7051201", "lat": 48.308632, "lon": -67.252525},
+    "mistassini": {"cehq": "062102", "climate_id": "7065639", "lat": 48.841667, "lon": -72.546944},
+    "saintfrancois": {"cehq": "030208", "climate_id": "7024280", "lat": 45.368889, "lon": -71.823611},
+    "sainteanne": {"cehq": "050408", "climate_id": "7016293", "lat": 46.791111, "lon": -71.393333},
+    "beaurivage": {"cehq": "023401", "climate_id": "7028754", "lat": 46.205, "lon": -70.785},
+    "becancour": {"cehq": "024014", "climate_id": "7028442", "lat": 46.049167, "lon": -71.266112},
+    "eaton": {"cehq": "030234", "climate_id": "7028123", "lat": 45.438611, "lon": -71.691389},
+    "etchemin": {"cehq": "023303", "climate_id": "7028754", "lat": 46.205, "lon": -70.785},
+    "saintcharles": {"cehq": "050904", "climate_id": "7016293", "lat": 46.791111, "lon": -71.393333},
 }
 
 # Values overridden in main()

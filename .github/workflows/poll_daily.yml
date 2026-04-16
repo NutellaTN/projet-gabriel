@@ -32,3 +32,14 @@ jobs:
           python scripts/poll_daily.py --station lassomption
           python scripts/poll_daily.py --station montmorency
           python scripts/poll_daily.py --station chaudiere
+          python scripts/poll_daily.py --station chateauguay
+          python scripts/poll_daily.py --station matane
+          python scripts/poll_daily.py --station matapedia
+          python scripts/poll_daily.py --station mistassini
+          python scripts/poll_daily.py --station saintfrancois
+          python scripts/poll_daily.py --station sainteanne
+          python scripts/poll_daily.py --station beaurivage
+          python scripts/poll_daily.py --station becancour
+          python scripts/poll_daily.py --station eaton
+          python scripts/poll_daily.py --station etchemin
+          python scripts/poll_daily.py --station saintcharles
