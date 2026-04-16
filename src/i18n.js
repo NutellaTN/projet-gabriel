@@ -67,7 +67,18 @@ export const translations = {
         // Rivers
         "river.lassomption": "Rivière L'Assomption",
         "river.montmorency": "Rivière Montmorency",
-        "river.chaudiere": "Rivière Chaudière"
+        "river.chaudiere": "Rivière Chaudière",
+        "river.chateauguay": "Rivière Châteauguay",
+        "river.matane": "Rivière Matane",
+        "river.matapedia": "Rivière Matapédia",
+        "river.mistassini": "Rivière Mistassini",
+        "river.saintfrancois": "Rivière Saint-François",
+        "river.sainteanne": "Rivière Sainte-Anne",
+        "river.beaurivage": "Rivière Beaurivage",
+        "river.becancour": "Rivière Bécancour",
+        "river.eaton": "Rivière Eaton",
+        "river.etchemin": "Rivière Etchemin",
+        "river.saintcharles": "Rivière Saint-Charles"
     },
     en: {
         // Navbar
@@ -135,7 +146,18 @@ export const translations = {
         // Rivers
         "river.lassomption": "L'Assomption River",
         "river.montmorency": "Montmorency River",
-        "river.steanne": "Ste-Anne River"
+        "river.steanne": "Ste-Anne River",
+        "river.chateauguay": "Châteauguay River",
+        "river.matane": "Matane River",
+        "river.matapedia": "Matapédia River",
+        "river.mistassini": "Mistassini River",
+        "river.saintfrancois": "Saint-François River",
+        "river.sainteanne": "Sainte-Anne River",
+        "river.beaurivage": "Beaurivage River",
+        "river.becancour": "Bécancour River",
+        "river.eaton": "Eaton River",
+        "river.etchemin": "Etchemin River",
+        "river.saintcharles": "Saint-Charles River"
     }
 };
 

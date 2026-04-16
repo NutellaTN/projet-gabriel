@@ -37,12 +37,13 @@ function buildPolygonAbove(boundary, qTop) {
     return pts;
 }
 
-function isSelectedPoint(selectedPoint, riverKey, panelKey, zone, index) {
+function isSelectedPoint(selectedPoint, riverKey, panelKey, zone, segmentIndex, index) {
     return (
         selectedPoint &&
         selectedPoint.riverKey === riverKey &&
         selectedPoint.panelKey === panelKey &&
         selectedPoint.zone === zone &&
+        selectedPoint.segmentIndex === segmentIndex &&
         selectedPoint.index === index
     );
 }
@@ -60,92 +61,164 @@ function drawControlPoints(
     if (!zones) return;
 
     const pointsGroup = g.append("g").attr("class", "control-points");
-    const zoneKeys = ["greenYellow", "yellowRed"];
+    // Support both legacy format (greenYellow/yellowRed) and explicit format (green/yellow/red)
+    const hasExplicit = zones.green || zones.yellow || zones.red;
+    const zoneKeys = hasExplicit
+        ? ["green", "yellow", "red"]
+        : ["greenYellow", "yellowRed"];
+
+    // For explicit mode, build an extremity filter to hide polygon-closing anchor points
+    let isExtremity = () => false;
+    if (hasExplicit) {
+        const cfg = riverConfigs[riverKey];
+        const qMin = cfg.qMin;
+        const qMax = cfg.qMax;
+        const djMax = panelKey === "djgc" ? cfg.djgcMax : cfg.djdcMax;
+        isExtremity = (p) =>
+            (p.dj === 0 || p.dj === djMax) && (p.q === qMin || p.q === qMax);
+    }
+    // For explicit mode, build coordinate sets so we can determine which boundary a point sits on
+    let greenCoords = new Set();
+    let yellowCoords = new Set();
+    let redCoords = new Set();
+    if (hasExplicit) {
+        const collectCoords = (rawZones) => {
+            const s = new Set();
+            if (!rawZones) return s;
+            const arr = Array.isArray(rawZones[0]) ? rawZones : [rawZones];
+            arr.forEach(poly => poly.forEach(p => s.add(`${p.dj},${p.q}`)));
+            return s;
+        };
+        greenCoords = collectCoords(zones.green);
+        yellowCoords = collectCoords(zones.yellow);
+        redCoords = collectCoords(zones.red);
+    }
 
     zoneKeys.forEach((zoneKey) => {
-        const arr = zones[zoneKey];
-        if (!arr) return;
+        const rawArr = zones[zoneKey];
+        if (!rawArr || rawArr.length === 0) return;
+        const segments = Array.isArray(rawArr[0]) ? rawArr : [rawArr];
 
-        pointsGroup
-            .selectAll("circle.point-" + zoneKey)
-            .data(
-                arr.map((p, index) => ({
-                    ...p,
-                    index,
-                    zoneKey,
-                }))
-            )
-            .enter()
-            .append("circle")
-            .attr("class", "point-" + zoneKey)
-            .attr("cx", (d) => x(d.dj))
-            .attr("cy", (d) => y(d.q))
-            .attr("r", (d) =>
-                isSelectedPoint(selectedPoint, riverKey, panelKey, zoneKey, d.index)
-                    ? 6
-                    : 4
-            )
-            .attr("fill", zoneKey === "greenYellow" ? "#2563eb" : "#111827")
-            .attr("stroke", (d) =>
-                isSelectedPoint(selectedPoint, riverKey, panelKey, zoneKey, d.index)
-                    ? "#f97316"
-                    : "#ffffff"
-            )
-            .attr("stroke-width", 2)
-            .style("cursor", "pointer")
-            .on("click", (event, d) => {
-                const cfg = riverConfigs[riverKey];
-                const zonesLocal =
-                    panelKey === "djgc" ? cfg.djgcZones : cfg.djdcZones;
+        segments.forEach((arr, segIndex) => {
+            pointsGroup
+                .selectAll(`circle.point-${zoneKey}-${segIndex}`)
+                .data(
+                    arr
+                        .map((p, index) => ({
+                            ...p,
+                            index,
+                            segmentIndex: segIndex,
+                            zoneKey,
+                        }))
+                        .filter((p) => !isExtremity(p))
+                        .filter((p) => {
+                            if (!hasExplicit) return true;
+                            // Only show points shared between two zones
+                            const key = `${p.dj},${p.q}`;
+                            let count = 0;
+                            if (greenCoords.has(key)) count++;
+                            if (yellowCoords.has(key)) count++;
+                            if (redCoords.has(key)) count++;
+                            return count >= 2;
+                        })
+                )
+                .enter()
+                .append("circle")
+                .attr("class", `point-${zoneKey}-${segIndex}`)
+                .attr("cx", (d) => x(d.dj))
+                .attr("cy", (d) => y(d.q))
+                .attr("r", (d) =>
+                    isSelectedPoint(selectedPoint, riverKey, panelKey, zoneKey, d.segmentIndex, d.index)
+                        ? 6
+                        : 4
+                )
+                .attr("fill", (d) => {
+                    if (!hasExplicit) {
+                        // Legacy mode: greenYellow = light blue, yellowRed = dark blue
+                        return zoneKey === "greenYellow" ? "#2563eb" : "#1e3a8a";
+                    }
+                    // Explicit mode: color by boundary membership
+                    const key = `${d.dj},${d.q}`;
+                    const onGY = greenCoords.has(key) && yellowCoords.has(key);
+                    const onYR = yellowCoords.has(key) && redCoords.has(key);
+                    if (onYR) return "#1e3a8a"; // dark blue (yellow-red boundary)
+                    return "#2563eb"; // light blue (green-yellow boundary or default)
+                })
+                .attr("stroke", (d) =>
+                    isSelectedPoint(selectedPoint, riverKey, panelKey, zoneKey, d.segmentIndex, d.index)
+                        ? "#f97316"
+                        : "#ffffff"
+                )
+                .attr("stroke-width", 2)
+                .style("cursor", "pointer")
+                .style("pointer-events", "all")
+                .on("click", (event, d) => {
+                    event.stopPropagation();
+                    const cfg = riverConfigs[riverKey];
+                    const zonesLocal =
+                        panelKey === "djgc" ? cfg.djgcZones : cfg.djdcZones;
 
-                // collect ALL overlapping points in this panel (both boundaries)
-                const same = [];
-                zoneKeys.forEach((zKey) => {
-                    const arrLocal = zonesLocal[zKey] || [];
-                    arrLocal.forEach((p, i) => {
-                        if (p.dj === d.dj && p.q === d.q) {
-                            same.push({ zoneKey: zKey, index: i });
-                        }
+                    const hasExplicitLocal = zonesLocal.green || zonesLocal.yellow || zonesLocal.red;
+                    const allKeys = hasExplicitLocal
+                        ? ["green", "yellow", "red"]
+                        : ["greenYellow", "yellowRed"];
+
+                    // collect ALL overlapping points in this panel (all boundaries)
+                    const same = [];
+                    allKeys.forEach((zKey) => {
+                        const rawLocal = zonesLocal[zKey];
+                        if (!rawLocal || rawLocal.length === 0) return;
+                        const segmentsLocal = Array.isArray(rawLocal[0]) ? rawLocal : [rawLocal];
+
+                        segmentsLocal.forEach((arrLocal, sIdx) => {
+                            arrLocal.forEach((p, i) => {
+                                if (p.dj === d.dj && p.q === d.q) {
+                                    same.push({ zoneKey: zKey, segmentIndex: sIdx, index: i });
+                                }
+                            });
+                        });
                     });
-                });
 
-                let chosen;
-                if (same.length === 0) {
-                    chosen = { zoneKey: d.zoneKey, index: d.index };
-                } else if (same.length === 1) {
-                    chosen = same[0];
-                } else {
-                    if (
-                        selectedPoint &&
-                        selectedPoint.riverKey === riverKey &&
-                        selectedPoint.panelKey === panelKey
-                    ) {
-                        const currentPos = same.findIndex(
-                            (p) =>
-                                p.zoneKey === selectedPoint.zone &&
-                                p.index === selectedPoint.index
-                        );
-                        if (currentPos !== -1) {
-                            chosen = same[(currentPos + 1) % same.length];
+                    let chosen;
+                    if (same.length === 0) {
+                        chosen = { zoneKey: d.zoneKey, segmentIndex: d.segmentIndex, index: d.index };
+                    } else if (same.length === 1) {
+                        chosen = same[0];
+                    } else {
+                        if (
+                            selectedPoint &&
+                            selectedPoint.riverKey === riverKey &&
+                            selectedPoint.panelKey === panelKey
+                        ) {
+                            const currentPos = same.findIndex(
+                                (p) =>
+                                    p.zoneKey === selectedPoint.zone &&
+                                    p.segmentIndex === selectedPoint.segmentIndex &&
+                                    p.index === selectedPoint.index
+                            );
+                            if (currentPos !== -1) {
+                                chosen = same[(currentPos + 1) % same.length];
+                            } else {
+                                chosen = same[0];
+                            }
                         } else {
                             chosen = same[0];
                         }
-                    } else {
-                        chosen = same[0];
                     }
-                }
 
-                const newSelectedPoint = {
-                    riverKey,
-                    panelKey,
-                    zone: chosen.zoneKey,
-                    index: chosen.index,
-                };
+                    const newSelectedPoint = {
+                        riverKey,
+                        panelKey,
+                        zone: chosen.zoneKey,
+                        segmentIndex: chosen.segmentIndex,
+                        index: chosen.index,
+                    };
 
-                if (onPointSelect) {
-                    onPointSelect(newSelectedPoint);
-                }
-            });
+                    if (onPointSelect) {
+                        onPointSelect(newSelectedPoint);
+                    }
+                });
+        });
     });
 }
 
@@ -171,7 +244,8 @@ function drawPanel(
         .attr("width", panelWidth)
         .attr("height", panelHeight)
         .attr("fill", "#ffffff")
-        .attr("stroke", "#000");
+        .attr("stroke", "#000")
+        .style("pointer-events", "none");
 
     // CLIPPED CONTENT GROUP
     const gClipped = g.append("g");
@@ -215,27 +289,91 @@ function drawPanel(
             .x((d) => x(d.dj))
             .y((d) => y(d.q));
 
-        const greenPoly = buildPolygonBelow(zones.greenYellow, y.domain()[0]);
-        const yellowPoly = buildPolygonBetween(
-            zones.greenYellow,
-            zones.yellowRed
-        );
-        const redPoly = buildPolygonAbove(zones.yellowRed, y.domain()[1]);
+        const rawGY = zones.greenYellow || [];
+        const rawYR = zones.yellowRed || [];
+        
+        const segmentsGY = (rawGY.length > 0 && Array.isArray(rawGY[0])) ? rawGY : (rawGY.length > 0 ? [rawGY] : []);
+        const segmentsYR = (rawYR.length > 0 && Array.isArray(rawYR[0])) ? rawYR : (rawYR.length > 0 ? [rawYR] : []);
+        
+        const maxSegments = Math.max(segmentsGY.length, segmentsYR.length);
 
-        if (greenPoly.length > 0) {
-            gClipped.append("path")
-                .attr("d", lineGen(greenPoly) + "Z")
-                .attr("fill", "rgba(29,211,29,0.53)");
+        let greenPaths = "";
+        let yellowPaths = "";
+        let redPaths = "";
+
+        if (zones.green || zones.yellow || zones.red) {
+            const addExplicitPaths = (rawZones, pathStr) => {
+                if (!rawZones || rawZones.length === 0) return pathStr;
+                const arr = Array.isArray(rawZones[0]) ? rawZones : [rawZones];
+                arr.forEach(poly => {
+                    if (poly && poly.length > 0) {
+                        pathStr += lineGen(poly) + "Z ";
+                    }
+                });
+                return pathStr;
+            };
+            greenPaths = addExplicitPaths(zones.green, greenPaths);
+            yellowPaths = addExplicitPaths(zones.yellow, yellowPaths);
+            redPaths = addExplicitPaths(zones.red, redPaths);
+        } else {
+            // Bottom green area is below the very first GY segment
+            if (segmentsGY.length > 0 && segmentsGY[0]) {
+                const greenPoly = buildPolygonBelow(segmentsGY[0], y.domain()[0]);
+                if (greenPoly.length > 0) {
+                    greenPaths += lineGen(greenPoly) + "Z ";
+                }
+            }
+
+            for (let i = 0; i < maxSegments; i++) {
+                const gy = segmentsGY[i];
+                const yr = segmentsYR[i];
+
+                if (gy && yr) {
+                    const yellowPoly = buildPolygonBetween(gy, yr);
+                    if (yellowPoly.length > 0) {
+                        yellowPaths += lineGen(yellowPoly) + "Z ";
+                    }
+                }
+
+                if (yr) {
+                    const nextGy = segmentsGY[i + 1];
+                    if (nextGy) {
+                        // Middle red area between current YR and next GY
+                        const redPoly = buildPolygonBetween(yr, nextGy);
+                        if (redPoly.length > 0) {
+                            redPaths += lineGen(redPoly) + "Z ";
+                        }
+                    } else {
+                        // Top red area above the final YR
+                        const redPoly = buildPolygonAbove(yr, y.domain()[1]);
+                        if (redPoly.length > 0) {
+                            redPaths += lineGen(redPoly) + "Z ";
+                        }
+                    }
+                }
+            }
         }
-        if (yellowPoly.length > 0) {
+
+        if (greenPaths) {
             gClipped.append("path")
-                .attr("d", lineGen(yellowPoly) + "Z")
-                .attr("fill", "rgba(246,240,26,0.53)");
+                .attr("d", greenPaths.trim())
+                .attr("fill", "rgba(29,211,29,0.53)")
+                .attr("fill-rule", "nonzero")
+                .style("pointer-events", "none");
         }
-        if (redPoly.length > 0) {
+        if (yellowPaths) {
             gClipped.append("path")
-                .attr("d", lineGen(redPoly) + "Z")
-                .attr("fill", "rgba(255,0,0,0.53)");
+                .attr("d", yellowPaths.trim())
+                .attr("fill", "rgba(246,240,26,0.53)")
+                .attr("fill-rule", "nonzero")
+                .style("pointer-events", "none");
+        }
+        if (redPaths) {
+            gClipped.append("path")
+                .attr("d", redPaths.trim())
+                .attr("fill", "rgba(255,0,0,0.53)")
+                .attr("fill-rule", "nonzero")
+                .style("pointer-events", "none");
         }
     }
 

@@ -25,10 +25,14 @@ function updatePointEditorStatus() {
 
     const panelLabel =
         selectedPoint.panelKey === "djgc" ? t("editor.panel.djgc") : t("editor.panel.djdc");
-    const zoneLabel =
-        selectedPoint.zone === "greenYellow"
-            ? t("editor.zone.greenYellow")
-            : t("editor.zone.yellowRed");
+    const zoneLabels = {
+        greenYellow: t("editor.zone.greenYellow"),
+        yellowRed: t("editor.zone.yellowRed"),
+        green: "Green",
+        yellow: "Yellow",
+        red: "Red",
+    };
+    const zoneLabel = zoneLabels[selectedPoint.zone] || selectedPoint.zone;
 
     statusEl.textContent = t("editor.status.selected", {
         river: riverName,
@@ -38,12 +42,27 @@ function updatePointEditorStatus() {
     });
 }
 
+function getZoneSegment(zones, zone, segmentIndex) {
+    const raw = zones[zone];
+    if (!raw || raw.length === 0) return raw;
+    // Explicit format: array of segment arrays
+    if (Array.isArray(raw[0])) {
+        return raw[segmentIndex !== undefined ? segmentIndex : 0];
+    }
+    // Legacy format: flat array of points
+    return raw;
+}
+
 function onPointSelect(pt) {
+    console.log("onPointSelect called with:", JSON.stringify(pt));
     selectedPoint = pt;
     const cfg = riverConfigs[pt.riverKey];
     const zones = pt.panelKey === "djgc" ? cfg.djgcZones : cfg.djdcZones;
-    const arr = zones[pt.zone];
+    console.log("zones keys:", Object.keys(zones));
+    const arr = getZoneSegment(zones, pt.zone, pt.segmentIndex);
+    console.log("arr:", arr, "index:", pt.index);
     const pointData = arr[pt.index];
+    console.log("pointData:", pointData);
 
     document.getElementById("ptDj").value = pointData.dj;
     document.getElementById("ptQ").value = pointData.q;
@@ -253,7 +272,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 selectedPoint.panelKey === "djgc"
                     ? cfg.djgcZones
                     : cfg.djdcZones;
-            const arr = zones[selectedPoint.zone];
+            const arr = getZoneSegment(zones, selectedPoint.zone, selectedPoint.segmentIndex);
             if (!arr || selectedPoint.index < 0 || selectedPoint.index >= arr.length) {
                 alert(t("editor.alert.error"));
                 return;
@@ -278,7 +297,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!selectedPoint) return;
             const cfg = riverConfigs[selectedPoint.riverKey];
             const zones = selectedPoint.panelKey === "djgc" ? cfg.djgcZones : cfg.djdcZones;
-            const arr = zones[selectedPoint.zone];
+            const arr = getZoneSegment(zones, selectedPoint.zone, selectedPoint.segmentIndex);
 
             if (arr && selectedPoint.index < arr.length - 1) {
                 onPointSelect({ ...selectedPoint, index: selectedPoint.index + 1 });
