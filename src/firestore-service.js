@@ -91,6 +91,7 @@ function processSeasonData(data, callback) {
     callback({
         historical,
         latest,
-        prediction: predictionPoints
+        prediction: predictionPoints,
+        lastUpdated: data.last_updated || null
     });
 }

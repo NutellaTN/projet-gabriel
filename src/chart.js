@@ -786,6 +786,17 @@ function renderChart(svgId, limits, data, showControlPoints, selectedPoint, onPo
         .attr("text-anchor", "middle")
         .attr("font-size", 12)
         .text(t("axis.q"));
+
+    // Title / Last updated text
+    if (safeData && safeData.lastUpdated) {
+        gRoot.append("text")
+            .attr("x", (panelWidth * 2 + midGap) / 2)
+            .attr("y", -5)
+            .attr("text-anchor", "middle")
+            .attr("font-size", 14)
+            .attr("fill", "#6b7280")
+            .text(t("chart.lastUpdated", { time: safeData.lastUpdated }));
+    }
 }
 
 export function drawDiagram(selectedPoint, showControlPoints, onPointSelect, data) {

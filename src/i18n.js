@@ -56,6 +56,7 @@ export const translations = {
 
         // Chart & Legend
         "chart.title": "Diagramme de Débâcle",
+        "chart.lastUpdated": "Dernière mise à jour : {time}",
         "legend.safe": "Sécuritaire",
         "legend.monitor": "Surveiller",
         "legend.critical": "Critique",
@@ -135,6 +136,7 @@ export const translations = {
 
         // Chart & Legend
         "chart.title": "Breakup Diagram",
+        "chart.lastUpdated": "Last updated: {time}",
         "legend.safe": "Safe",
         "legend.monitor": "Monitor",
         "legend.critical": "Critical",

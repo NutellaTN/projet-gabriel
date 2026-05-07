@@ -203,8 +203,7 @@ def fetch_climate_daily(climate_id: str, start_date: str, end_date: str) -> Dict
             r.raise_for_status()
             data = r.json()
         except Exception as e:
-            print(f"Error fetching climate-daily data: {e}")
-            sys.exit(1)
+            raise RuntimeError(f"Error fetching climate-daily data: {e}")
         features = data.get("features", [])
         if not features:
             break
@@ -238,7 +237,7 @@ def pick_nearest_citypage_item(lat: float, lon: float, radius_km: float, lang: s
     )
     feats = data.get("features", []) or []
     if not feats:
-        raise SystemExit("No citypage points found. Increase RADIUS_KM.")
+        raise RuntimeError("No citypage points found. Increase RADIUS_KM.")
 
     best_id, best_dist = None, None
     for f in feats:
@@ -252,7 +251,7 @@ def pick_nearest_citypage_item(lat: float, lon: float, radius_km: float, lang: s
             best_dist, best_id = d, fid
 
     if best_id is None:
-        raise SystemExit("Nearby items returned, but none had usable coordinates/ids.")
+        raise RuntimeError("Nearby items returned, but none had usable coordinates/ids.")
     return best_id, best_dist  # type: ignore[return-value]
 
 
@@ -577,8 +576,7 @@ def parse_highcharts_q() -> Tuple[Dict[str, float], Dict[str, Dict[str, float]]]
         return obs_by_date, pred_by_date
 
     except Exception as e:
-        print(f"Failed to fetch CEHQ data: {e}")
-        sys.exit(1)
+        raise RuntimeError(f"Failed to fetch CEHQ data: {e}")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -603,16 +601,10 @@ def compute_djdc_array(mean_by_date: Dict[str, float]) -> Dict[str, float]:
 # MAIN
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Poll daily data and push to Firestore.")
-    parser.add_argument("--station", default="lassomption", choices=RIVERS.keys(), help="Station key")
-    parser.add_argument("--start", default="2026-02-15", help="Start date for DJDC-5 accumulation (YYYY-MM-DD)")
-    parser.add_argument("--dry-run", action="store_true", help="Do not write to Firestore")
-    args = parser.parse_args()
-
+def process_station(db: firestore.Client, station_key: str, start_date: str, dry_run: bool) -> None:
     global STATION_KEY, CEHQ_STATION, LAT, LON, CLIMATE_ID
-    cfg = RIVERS[args.station]
-    STATION_KEY = args.station
+    cfg = RIVERS[station_key]
+    STATION_KEY = station_key
     CEHQ_STATION = cfg["cehq"]
     LAT = cfg["lat"]
     LON = cfg["lon"]
@@ -620,8 +612,8 @@ def main() -> None:
 
     # 1. Historical Temp
     yesterday = (datetime.datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
-    print(f"Fetching climate-daily from {args.start} to {yesterday} for {STATION_KEY}...")
-    hist_temp = fetch_climate_daily(CLIMATE_ID, args.start, yesterday)
+    print(f"Fetching climate-daily from {start_date} to {yesterday} for {STATION_KEY}...")
+    hist_temp = fetch_climate_daily(CLIMATE_ID, start_date, yesterday)
 
     # 2. Future Temp (forecast)
     future_temp = get_realtime_and_forecast_temps()
@@ -642,7 +634,6 @@ def main() -> None:
     obs_q, pred_q = parse_highcharts_q()
 
     # 6. Prepare Firestore updates
-    db = init_firebase()
     doc_ref = (
         db.collection("stations")
         .document(STATION_KEY)
@@ -656,7 +647,7 @@ def main() -> None:
     existing_points = doc_data.get("djdc_q_points", [])
     merged_points: Dict[str, Any] = {}
 
-    base_date = datetime.datetime.strptime(args.start, "%Y-%m-%d")
+    base_date = datetime.datetime.strptime(start_date, "%Y-%m-%d")
     for pt in existing_points:
         d_str = pt.get("date")
         if not d_str:
@@ -700,18 +691,56 @@ def main() -> None:
     print(f"Latest Point: {latest_obj}")
     print(f"Predictions:  {len(pred_values)} future points")
 
-    if args.dry_run:
+    if dry_run:
         print("Dry-run enabled: not writing anything.")
         return
 
+    tz = get_quebec_tz()
+    last_updated_str = datetime.datetime.now(tz).strftime("%d/%m/%Y at %H:%M:%S")
+
     # 1. Set historical/latest data (merges with existing)
     doc_ref.set(
-        {"djdc_q_points": final_points, "latest": latest_obj},
+        {"djdc_q_points": final_points, "latest": latest_obj, "last_updated": last_updated_str},
         merge=True,
     )
     # 2. Fully overwrite the prediction object to wipe out old prediction dates
     doc_ref.update({"prediction": prediction_obj})
     print("Updates committed. Done.")
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Poll daily data and push to Firestore.")
+    parser.add_argument("--station", default="lassomption", help="Station key or 'all'")
+    parser.add_argument("--start", default="2026-02-15", help="Start date for DJDC-5 accumulation (YYYY-MM-DD)")
+    parser.add_argument("--dry-run", action="store_true", help="Do not write to Firestore")
+    args = parser.parse_args()
+
+    if args.station == "all":
+        stations = list(RIVERS.keys())
+    else:
+        if args.station not in RIVERS:
+            print(f"Unknown station: {args.station}")
+            sys.exit(1)
+        stations = [args.station]
+
+    db = init_firebase()
+    
+    errors = []
+
+    for st in stations:
+        try:
+            print(f"\n======================================")
+            print(f"Polling station: {st}")
+            print(f"======================================")
+            process_station(db, st, args.start, args.dry_run)
+        except Exception as e:
+            print(f"Error processing station {st}: {e}")
+            errors.append(st)
+
+    if errors:
+        print(f"\nFailed to process the following stations: {', '.join(errors)}")
+        sys.exit(1)
+    else:
+        print("\nAll stations processed successfully.")
 
 
 if __name__ == "__main__":
