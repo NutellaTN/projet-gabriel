@@ -113,8 +113,15 @@ document.addEventListener('DOMContentLoaded', () => {
         drawDiagram(selectedPoint, showControlPoints, onPointSelect, currentSeries);
     });
 
-    // Initial river: L'Assomption
-    loadRiverConfig("lassomption");
+    // Initial river from URL or default
+    const urlParams = new URLSearchParams(window.location.search);
+    const riverParam = urlParams.get('river');
+    const initialRiver = (riverParam && riverConfigs[riverParam]) ? riverParam : "lassomption";
+    
+    const riverSelect = document.getElementById("riverSelect");
+    if (riverSelect) riverSelect.value = initialRiver;
+    
+    loadRiverConfig(initialRiver);
 
     document
         .getElementById("riverSelect")

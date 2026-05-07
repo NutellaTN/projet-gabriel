@@ -1,6 +1,8 @@
 export const riverConfigs = {
     lassomption: {
         label: "Rivière L'Assomption",
+        lat: 45.81,
+        lon: -73.43,
         qMin: 5,
         qMax: 500,
         djgcMax: 1300,
@@ -46,6 +48,8 @@ export const riverConfigs = {
 
     montmorency: {
         label: "Rivière Montmorency",
+        lat: 46.837,
+        lon: -71.197,
         qMin: 1,
         qMax: 1000,
         djgcMax: 1300,
@@ -89,6 +93,8 @@ export const riverConfigs = {
 
     chaudiere: {
         label: "Rivière Chaudière",
+        lat: 46.433,
+        lon: -70.933,
         qMin: 2,
         qMax: 2000,
         djgcMax: 1300,
@@ -130,6 +136,8 @@ export const riverConfigs = {
 
     chateauguay: {
         label: "Rivière Châteauguay",
+        lat: 45.167222,
+        lon: -73.678889,
         qMin: 10,
         qMax: 1000,
         djgcMax: 1100,
@@ -172,6 +180,8 @@ export const riverConfigs = {
     },
     matane: {
         label: "Rivière Matane",
+        lat: 48.846,
+        lon: -67.53,
         qMin: 1,
         qMax: 1000,
         djgcMax: 1350,
@@ -238,6 +248,8 @@ export const riverConfigs = {
     },
     matapedia: {
         label: "Rivière Matapédia",
+        lat: 48.308,
+        lon: -67.252,
         qMin: 1,
         qMax: 1000,
         djgcMax: 1350,
@@ -280,6 +292,8 @@ export const riverConfigs = {
     },
     mistassini: {
         label: "Rivière Mistassini",
+        lat: 48.841667,
+        lon: -72.546944,
         qMin: 30,
         qMax: 3000,
         djgcMax: 1800,
@@ -322,6 +336,8 @@ export const riverConfigs = {
     },
     saintfrancois: {
         label: "Rivière Saint-François",
+        lat: 45.368889,
+        lon: -71.823611,
         qMin: 30,
         qMax: 3000,
         djgcMax: 1100,
@@ -364,6 +380,8 @@ export const riverConfigs = {
     },
     sainteanne: {
         label: "Rivière Sainte-Anne",
+        lat: 46.883,
+        lon: -71.833,
         qMin: 1,
         qMax: 1000,
         djgcMax: 1350,
@@ -478,6 +496,8 @@ export const riverConfigs = {
     },
     beaurivage: {
         label: "Rivière Beaurivage",
+        lat: 46.583,
+        lon: -71.3,
         qMin: 2,
         qMax: 2000,
         djgcMax: 1300,
@@ -518,6 +538,8 @@ export const riverConfigs = {
     },
     becancour: {
         label: "Rivière Bécancour",
+        lat: 46.35,
+        lon: -72.433,
         qMin: 2,
         qMax: 2000,
         djgcMax: 1300,
@@ -558,6 +580,8 @@ export const riverConfigs = {
     },
     eaton: {
         label: "Rivière Eaton",
+        lat: 45.438611,
+        lon: -71.691389,
         qMin: 2,
         qMax: 2000,
         djgcMax: 1300,
@@ -598,6 +622,8 @@ export const riverConfigs = {
     },
     etchemin: {
         label: "Rivière Etchemin",
+        lat: 46.633,
+        lon: -71.05,
         qMin: 2,
         qMax: 2000,
         djgcMax: 1300,
@@ -638,6 +664,8 @@ export const riverConfigs = {
     },
     saintcharles: {
         label: "Rivière Saint-Charles",
+        lat: 46.816,
+        lon: -71.35,
         qMin: 2,
         qMax: 2000,
         djgcMax: 1300,

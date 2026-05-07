@@ -4,13 +4,12 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <!-- Firebase Modular SDK via npm (no script tags needed) -->
-    <title>Diagramme de Débâcle – Surveillance en Temps Réel</title>
+    <title>Carte de la Débâcle – Surveillance en Temps Réel</title>
 </head>
 
 <body>
     <div class="app-container">
-        <!-- ... content ... -->
+        <!-- Header Section -->
         <header class="app-header">
             <div class="logo">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -26,150 +25,19 @@
             <button id="langToggleBtn" class="btn-secondary small" style="margin-left:auto;">EN</button>
         </header>
 
-        <main class="dashboard-grid">
-            <aside class="sidebar glass-panel">
-                <form id="configForm">
-                    <div class="section-title" data-i18n="sidebar.config">Configuration</div>
-
-                    <div class="control-group">
-                        <label for="riverSelect" data-i18n="config.riverSelect">Sélectionner la rivière</label>
-                        <div class="select-wrapper">
-                            <select id="riverSelect">
-                                <option value="lassomption" data-i18n="river.lassomption">Rivière L'Assomption</option>
-                                <option value="montmorency" data-i18n="river.montmorency">Rivière Montmorency</option>
-                                <option value="chaudiere" data-i18n="river.chaudiere">Rivière Chaudière</option>
-                                <option value="chateauguay" data-i18n="river.chateauguay">Rivière Châteauguay</option>
-                                <option value="matane" data-i18n="river.matane">Rivière Matane</option>
-                                <option value="matapedia" data-i18n="river.matapedia">Rivière Matapédia</option>
-                                <option value="mistassini" data-i18n="river.mistassini">Rivière Mistassini</option>
-                                <option value="saintfrancois" data-i18n="river.saintfrancois">Rivière Saint-François</option>
-                                <option value="sainteanne" data-i18n="river.sainteanne">Rivière Sainte-Anne</option>
-                                <option value="beaurivage" data-i18n="river.beaurivage">Rivière Beaurivage</option>
-                                <option value="becancour" data-i18n="river.becancour">Rivière Bécancour</option>
-                                <option value="eaton" data-i18n="river.eaton">Rivière Eaton</option>
-                                <option value="etchemin" data-i18n="river.etchemin">Rivière Etchemin</option>
-                                <option value="saintcharles" data-i18n="river.saintcharles">Rivière Saint-Charles</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div class="collapsible-section">
-                        <details>
-                            <summary data-i18n="config.axisParams">Paramètres des axes</summary>
-                            <div class="grid-2">
-                                <div class="input-wrapper">
-                                    <label for="qMin" data-i18n="config.qMin">Q min</label>
-                                    <input type="number" id="qMin" step="1" />
-                                </div>
-                                <div class="input-wrapper">
-                                    <label for="qMax" data-i18n="config.qMax">Q max</label>
-                                    <input type="number" id="qMax" step="10" />
-                                </div>
-                                <div class="input-wrapper">
-                                    <label for="djgcMax" data-i18n="config.djgcMax">DJGC max</label>
-                                    <input type="number" id="djgcMax" step="50" />
-                                </div>
-                                <div class="input-wrapper">
-                                    <label for="djdcMax" data-i18n="config.djdcMax">DJDC-5 max</label>
-                                    <input type="number" id="djdcMax" step="10" />
-                                </div>
-                            </div>
-                        </details>
-                    </div>
-
-                    <button type="button" id="drawBtn" class="btn-primary" style="margin-top: 16px;">
-                        <span data-i18n="btn.redraw">Redessiner le graphique</span>
-                    </button>
-
-                    <div class="divider"></div>
-
-                    <div class="section-title" data-i18n="sidebar.pipeline">Pipeline de données</div>
-                    <button type="button" id="runPollBtn" class="btn-secondary small">
-                        <span data-i18n="pipeline.startBtn">▶ Lancer la collecte</span>
-                    </button>
-                    <span id="pollStatus" style="font-size:11px;color:#94a3b8;display:block;margin-top:4px;"></span>
-                    <progress id="pollProgress"
-                        style="display:none; width:100%; margin-top:8px; height:6px;"></progress>
-
-                    <div class="divider"></div>
-
-                    <div class="section-title" data-i18n="sidebar.viewMode">Mode d'affichage</div>
-                    <div class="button-group">
-                        <button type="button" id="focusObservedBtn" class="btn-secondary small"
-                            data-i18n="viewMode.focus">Focus : Observées</button>
-                        <button type="button" id="resetViewBtn" class="btn-secondary small active"
-                            data-i18n="viewMode.reset">Réinitialiser / Toutes les zones</button>
-                    </div>
-
-                    <div class="divider"></div>
-
-                    <div class="section-title" data-i18n="sidebar.pointEditor">Éditeur de formes</div>
-                    <div class="button-group">
-                        <button type="button" id="showPointsBtn" class="btn-secondary small"
-                            data-i18n="editor.showPoints">Afficher les points</button>
-                        <button type="button" id="hidePointsBtn" class="btn-secondary small"
-                            data-i18n="editor.hidePoints">Masquer</button>
-                    </div>
-
-                    <div class="control-group" style="margin-top: 16px;">
-                        <div class="input-wrapper full-width">
-                            <label for="qBankfull" data-i18n="config.qBankfull">Q de référence (plein
-                                bord)</label>
-                            <div style="display: flex; gap: 8px; width: 100%;">
-                                <input type="number" id="qBankfull" step="5" style="flex: 1;" />
-                                <button type="button" id="updateQBankfullBtn" class="btn-secondary small"
-                                    style="white-space: nowrap;">
-                                    <span data-i18n="editor.updateLineBtn">Mettre à jour la ligne</span>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="control-group box-style">
-                        <div class="grid-2">
-                            <div class="input-wrapper">
-                                <label for="ptDj" data-i18n="editor.ptDj">Point DJ</label>
-                                <input type="number" id="ptDj" step="1" placeholder="-" />
-                            </div>
-                            <div class="input-wrapper">
-                                <label for="ptQ" data-i18n="editor.ptQ">Point Q</label>
-                                <input type="number" id="ptQ" step="1" placeholder="-" />
-                            </div>
-                        </div>
-                        <button type="button" id="updatePointBtn" class="btn-accent" data-i18n="editor.updateBtn">Mettre
-                            à jour le point</button>
-
-                        <div class="nav-buttons">
-                            <button type="button" id="moveLeftBtn" class="btn-icon" title="Point précédent">←</button>
-                            <span id="pointStatus" data-i18n="editor.status.none">Aucun point sélectionné.</span>
-                            <button type="button" id="moveRightBtn" class="btn-icon" title="Point suivant">→</button>
-                        </div>
-                    </div>
-                </form>
-            </aside>
-
-            <section class="visualizer glass-panel">
-                <div class="visualizer-header">
-                    <h2 data-i18n="chart.title">Diagramme de Débâcle</h2>
-                    <div class="legend">
-                        <span class="legend-item"><span class="dot green"></span> <span
-                                data-i18n="legend.safe">Sécuritaire</span></span>
-                        <span class="legend-item"><span class="dot yellow"></span> <span
-                                data-i18n="legend.monitor">Surveiller</span></span>
-                        <span class="legend-item"><span class="dot red"></span> <span
-                                data-i18n="legend.critical">Critique</span></span>
-                        <span class="legend-item"><span class="line-icon blue"></span> <span
-                                data-i18n="legend.observed">Observées</span></span>
-                    </div>
-                </div>
-                <div class="chart-container">
-                    <svg id="diagram" viewBox="0 0 900 450" preserveAspectRatio="xMidYMid meet"></svg>
-                </div>
-            </section>
+        <main class="dashboard-grid map-layout" style="display: flex; flex-direction: column; height: calc(100vh - 64px);">
+            <div class="map-legend" style="padding: 16px; background: white; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: center; gap: 24px; align-items: center; box-shadow: 0 1px 2px rgba(0,0,0,0.05); z-index: 10;">
+                <span style="font-weight: 500; color: #475569;" data-i18n="map.legendTitle">État des Rivières :</span>
+                <span class="legend-item"><span class="dot green"></span> <span data-i18n="legend.safe">Sécuritaire</span></span>
+                <span class="legend-item"><span class="dot yellow"></span> <span data-i18n="legend.monitor">Surveiller</span></span>
+                <span class="legend-item"><span class="dot red"></span> <span data-i18n="legend.critical">Critique</span></span>
+                <span class="legend-item"><span class="dot gray" style="background: #94a3b8; border-color: #64748b;"></span> <span data-i18n="legend.nodata">Aucune donnée / Hors Zone</span></span>
+            </div>
+            <div id="map" style="flex: 1; width: 100%; background: #0f172a;"></div>
         </main>
     </div>
 
-    <script type="module" src="/src/main.js"></script>
+    <script type="module" src="/src/map.js"></script>
 </body>
 
 </html>

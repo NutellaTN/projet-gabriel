@@ -4,6 +4,7 @@ export const translations = {
     fr: {
         // Navbar
         "app.title": "Surveillance de la Débâcle",
+        "nav.backToMap": "Retour à la carte",
 
         // Sidebar Headers
         "sidebar.config": "Configuration",
@@ -62,6 +63,8 @@ export const translations = {
         "legend.monitor": "Surveiller",
         "legend.critical": "Critique",
         "legend.observed": "Observées",
+        "legend.nodata": "Aucune donnée",
+        "map.legendTitle": "État des Rivières :",
         "axis.djgc": "DJGC (°C·d)",
         "axis.djdc": "DJDC -5 °C (°C·d)",
         "axis.q": "Q (m³/s)",
@@ -85,6 +88,7 @@ export const translations = {
     en: {
         // Navbar
         "app.title": "Ice Breakup Monitoring",
+        "nav.backToMap": "Back to Map",
 
         // Sidebar Headers
         "sidebar.config": "Configuration",
@@ -143,6 +147,8 @@ export const translations = {
         "legend.monitor": "Monitor",
         "legend.critical": "Critical",
         "legend.observed": "Observed",
+        "legend.nodata": "No data",
+        "map.legendTitle": "Rivers Status:",
         "axis.djgc": "DJGC (°C·d)",
         "axis.djdc": "DJDC -5 °C (°C·d)",
         "axis.q": "Q (m³/s)",
