@@ -789,13 +789,18 @@ function renderChart(svgId, limits, data, showControlPoints, selectedPoint, onPo
 
     // Title / Last updated text
     if (safeData && safeData.lastUpdated) {
+        let displayTime = safeData.lastUpdated;
+        const parts = displayTime.split(" ");
+        if (parts.length === 2) {
+            displayTime = t("chart.timeFormat", { date: parts[0], time: parts[1] });
+        }
         gRoot.append("text")
             .attr("x", (panelWidth * 2 + midGap) / 2)
             .attr("y", -5)
             .attr("text-anchor", "middle")
             .attr("font-size", 14)
             .attr("fill", "#6b7280")
-            .text(t("chart.lastUpdated", { time: safeData.lastUpdated }));
+            .text(t("chart.lastUpdated", { time: displayTime }));
     }
 }
 

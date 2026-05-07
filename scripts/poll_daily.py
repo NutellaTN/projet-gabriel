@@ -696,7 +696,7 @@ def process_station(db: firestore.Client, station_key: str, start_date: str, dry
         return
 
     tz = get_quebec_tz()
-    last_updated_str = datetime.datetime.now(tz).strftime("%d/%m/%Y at %H:%M:%S")
+    last_updated_str = datetime.datetime.now(tz).strftime("%d/%m/%Y %H:%M:%S")
 
     # 1. Set historical/latest data (merges with existing)
     doc_ref.set(
