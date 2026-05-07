@@ -32,7 +32,7 @@ export function subscribeToSeasonData(stationId, onData) {
     const unsubscribe = onSnapshot(docRef, (docSnap) => {
         if (docSnap.exists()) {
             const data = docSnap.data();
-            processSeasonData(data, onData);
+            processSeasonData(stationId, data, onData);
         } else {
             console.log("No season data found for", seasonId);
             onData(null);
@@ -44,17 +44,22 @@ export function subscribeToSeasonData(stationId, onData) {
     return unsubscribe;
 }
 
-function processSeasonData(data, callback) {
+function processSeasonData(stationId, data, callback) {
     const historical = [];
 
     // 1. DJGC Points (Winter)
     if (data.djgc_q_points) {
+        let lastDate = null;
         data.djgc_q_points.forEach(pt => {
+            if (stationId === 'matapedia' && lastDate && lastDate <= '2025-12-25' && pt.date >= '2026-02-11') {
+                historical.push({ dj: NaN, q: NaN, phase: "DJGC" });
+            }
             historical.push({
                 dj: pt.djgc,
                 q: pt.q,
                 phase: "DJGC"
             });
+            lastDate = pt.date;
         });
     }
 
