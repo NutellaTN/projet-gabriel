@@ -722,6 +722,14 @@ def main() -> None:
             sys.exit(1)
         stations = [args.station]
 
+    # Stop polling if past May 15th
+    tz = get_quebec_tz()
+    today = datetime.datetime.now(tz).date()
+    end_date = datetime.date(today.year, 5, 15)
+    if today > end_date:
+        print(f"Current date {today} is past the season end date of {end_date}. Exiting without polling.")
+        sys.exit(0)
+
     db = init_firebase()
     
     errors = []
