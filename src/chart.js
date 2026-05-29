@@ -466,22 +466,30 @@ function renderChart(svgId, limits, data, showControlPoints, selectedPoint, onPo
         typeof d.djgc === 'number' && !isNaN(d.djgc)
     );
 
-    let width = parseFloat(svg.attr("width"));
-    let height = parseFloat(svg.attr("height"));
+    // Get actual width and height of the container to render dynamic fluid SVG
+    const container = document.querySelector(".chart-container");
+    let width = container ? container.clientWidth : 900;
+    let height = container ? container.clientHeight : 450;
+    
+    // Ensure minimum fallback values for rendering sanity
+    if (width < 300) width = 900;
+    if (height < 200) height = 450;
 
-    if (isNaN(width) || isNaN(height)) {
-        const viewBox = svg.attr("viewBox");
-        if (viewBox) {
-            const parts = viewBox.split(" ");
-            width = parseFloat(parts[2]);
-            height = parseFloat(parts[3]);
-        } else {
-            width = 900;
-            height = 450;
-        }
+    // Update the SVG attributes dynamically to match the container perfectly
+    svg.attr("width", width)
+       .attr("height", height)
+       .attr("viewBox", `0 0 ${width} ${height}`);
+
+    const isMobile = width < 720; // mobile layout breakpoint
+    
+    let panelWidth, panelHeight;
+    if (isMobile) {
+        panelWidth = width - margin.left - margin.right;
+        panelHeight = (height - margin.top - margin.bottom - midGap) / 2;
+    } else {
+        panelWidth = (width - margin.left - margin.right - midGap) / 2;
+        panelHeight = height - margin.top - margin.bottom;
     }
-    const panelWidth = (width - margin.left - margin.right - midGap) / 2;
-    const panelHeight = height - margin.top - margin.bottom;
 
     svg.selectAll("*").remove();
 
@@ -544,7 +552,7 @@ function renderChart(svgId, limits, data, showControlPoints, selectedPoint, onPo
     // Right panel (DJDC-5)
     const gRight = gRoot
         .append("g")
-        .attr("transform", `translate(${panelWidth + midGap},0)`);
+        .attr("transform", isMobile ? `translate(0, ${panelHeight + midGap})` : `translate(${panelWidth + midGap},0)`);
     const xDJDC = d3.scaleLinear().domain([djdcMin, djdcMax]).range([0, panelWidth]);
 
     const gRightClipped = drawPanel(
@@ -559,7 +567,7 @@ function renderChart(svgId, limits, data, showControlPoints, selectedPoint, onPo
         qGridTicks,
         qBank,
         showYLabels,
-        "right",
+        isMobile ? "left" : "right",
         clipId
     );
 
@@ -787,6 +795,17 @@ function renderChart(svgId, limits, data, showControlPoints, selectedPoint, onPo
         .attr("font-size", 12)
         .text(t("axis.q"));
 
+    if (isMobile) {
+        gRight
+            .append("text")
+            .attr("transform", `rotate(-90)`)
+            .attr("x", -panelHeight / 2)
+            .attr("y", -50)
+            .attr("text-anchor", "middle")
+            .attr("font-size", 12)
+            .text(t("axis.q"));
+    }
+
     // Title / Last updated text
     if (safeData && safeData.lastUpdated) {
         let displayTime = safeData.lastUpdated;
@@ -795,10 +814,10 @@ function renderChart(svgId, limits, data, showControlPoints, selectedPoint, onPo
             displayTime = t("chart.timeFormat", { date: parts[0], time: parts[1] });
         }
         gRoot.append("text")
-            .attr("x", (panelWidth * 2 + midGap) / 2)
-            .attr("y", -5)
+            .attr("x", isMobile ? panelWidth / 2 : (panelWidth * 2 + midGap) / 2)
+            .attr("y", -8)
             .attr("text-anchor", "middle")
-            .attr("font-size", 14)
+            .attr("font-size", 12)
             .attr("fill", "#6b7280")
             .text(t("chart.lastUpdated", { time: displayTime }));
     }

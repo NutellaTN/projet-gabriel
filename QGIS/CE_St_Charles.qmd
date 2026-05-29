@@ -1,0 +1,57 @@
+<!DOCTYPE qgis PUBLIC 'http://mrcc.com/qgis.dtd' 'SYSTEM'>
+<qgis version="3.22.6-Bia?owie?a">
+  <identifier>RH_L</identifier>
+  <parentidentifier></parentidentifier>
+  <language>FRA</language>
+  <type>dataset</type>
+  <title>RH_L (Réseau hydro – lignes)</title>
+  <abstract>La classe d’entité RH_L correspond aux lignes du réseau géométrique. Elles représentent la continuité de l’écoulement à travers tous les types d’entités aquatiques (cours d’eau, lacs, milieux humides, etc.). La géométrie des lignes centrales coïncide avec celle des surfaces de la classe d’entités RH_S.
+Les sommets des segments (vertex) sont géométriquement constitué de quatre types de coordonnées exprimées en mètres soit x, y, z et m. Le réseau comporte des valeurs en x, y ainsi qu’une valeur m qui correspond à une distance relative utilisée pour localiser des évènements hydro dans le réseau hydrographique. Actuellement, les sommets des segments n’ont pas de valeur z dans la géométrie,mais cette donnée sera ajoutée dans une version ultérieure de la GRHQ.
+La classe RH_L contient les segments qui assurent la continuité du réseau hydrographique. Certains d’entre eux ne sont pas des cours d’eau de surface, mais des raccords servant à la connectivité, sans correspondance visible sur le terrain et dont le tracé n’est que théorique. Ces segments portent la valeur de code producteur « MDDELCC ».
+
+RH_L – Segments du réseau hydrologique</abstract>
+  <keywords vocabulary="Clés de recherche">
+    <keyword>RH_L</keyword>
+    <keyword>Réseau hydrographique</keyword>
+    <keyword>Réseau hydrologique</keyword>
+    <keyword>Segment</keyword>
+    <keyword>Ligne</keyword>
+    <keyword>Segment linéaire</keyword>
+    <keyword>Cours d'eau</keyword>
+    <keyword>Cours d'eau linéaire</keyword>
+    <keyword>Filamentaire</keyword>
+    <keyword>Canal</keyword>
+  </keywords>
+  <links/>
+  <fees></fees>
+  <constraints type="Limitations d'usage">Les données géographiques partagées dans leur forme originale ou modifiée, sont protégées en vertu de la Loi sur le droit d'auteur (L.R.C., 1985, c. C-42) et demeurent la propriété du gouvernement du Québec.
+Le ministère de l'Énergie et des Ressources naturelles garantit qu'il détient tous les droits et autorisations requis pour la diffusion et l'émission des licences de droits d'auteur pour les données de la GRHQ.
+</constraints>
+  <rights>Gouvernement du Québec. &#xd;
+Ministère du Développement durable, de l'Environnement et de la Lutte contre les changements climatiques (MDDELCC)&#xd;
+Direction de l'expertise en biodiversité (DEB) &#xd;
+et &#xd;
+Ministère de l'Énergie et des Ressources naturelles (MERN)&#xd;
+Direction générale de l'information géographique (DGIG).&#xd;
+&#xd;
+Gouvernement du Canada.&#xd;
+Ressources naturelles Canada, Secteur des sciences de la Terre&#xd;
+Centre canadien de cartographie et d’observation de la Terre (CCCOT).</rights>
+  <encoding></encoding>
+  <crs>
+    <spatialrefsys>
+      <wkt>PROJCRS["NAD83 / Quebec Lambert",BASEGEOGCRS["NAD83",DATUM["North American Datum 1983",ELLIPSOID["GRS 1980",6378137,298.257222101,LENGTHUNIT["metre",1]]],PRIMEM["Greenwich",0,ANGLEUNIT["degree",0.0174532925199433]],ID["EPSG",4269]],CONVERSION["Quebec Lambert Projection",METHOD["Lambert Conic Conformal (2SP)",ID["EPSG",9802]],PARAMETER["Latitude of false origin",44,ANGLEUNIT["degree",0.0174532925199433],ID["EPSG",8821]],PARAMETER["Longitude of false origin",-68.5,ANGLEUNIT["degree",0.0174532925199433],ID["EPSG",8822]],PARAMETER["Latitude of 1st standard parallel",60,ANGLEUNIT["degree",0.0174532925199433],ID["EPSG",8823]],PARAMETER["Latitude of 2nd standard parallel",46,ANGLEUNIT["degree",0.0174532925199433],ID["EPSG",8824]],PARAMETER["Easting at false origin",0,LENGTHUNIT["metre",1],ID["EPSG",8826]],PARAMETER["Northing at false origin",0,LENGTHUNIT["metre",1],ID["EPSG",8827]]],CS[Cartesian,2],AXIS["easting (X)",east,ORDER[1],LENGTHUNIT["metre",1]],AXIS["northing (Y)",north,ORDER[2],LENGTHUNIT["metre",1]],USAGE[SCOPE["Topographic mapping (medium and small scale)."],AREA["Canada - Quebec."],BBOX[44.99,-79.85,62.62,-57.1]],ID["EPSG",32198]]</wkt>
+      <proj4>+proj=lcc +lat_0=44 +lon_0=-68.5 +lat_1=60 +lat_2=46 +x_0=0 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs</proj4>
+      <srsid>2843</srsid>
+      <srid>32198</srid>
+      <authid>EPSG:32198</authid>
+      <description>NAD83 / Quebec Lambert</description>
+      <projectionacronym>lcc</projectionacronym>
+      <ellipsoidacronym>EPSG:7019</ellipsoidacronym>
+      <geographicflag>false</geographicflag>
+    </spatialrefsys>
+  </crs>
+  <extent>
+    <spatial dimensions="2" maxy="52.7015129999999985" miny="51.89874700000000018" minz="0" crs="EPSG:32198" maxz="0" minx="-78.62020900000000267" maxx="-75.61807899999999449"/>
+  </extent>
+</qgis>

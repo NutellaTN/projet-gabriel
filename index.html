@@ -1,9 +1,11 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="fr">
 
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Surveillance en temps réel de la débâcle des rivières. Suivi cartographique et analyse prédictive des risques d'inondation par l'indice thermique cumulé (DJGC, DJDC-5)." />
+    <meta name="keywords" content="débâcle, surveillance rivières, inondations, québec, DJGC, DJDC-5, débit eau, crue des eaux" />
     <title>Carte de la Débâcle – Surveillance en Temps Réel</title>
 </head>
 
@@ -25,15 +27,26 @@
             <button id="langToggleBtn" class="btn-secondary small" style="margin-left:auto;">EN</button>
         </header>
 
-        <main class="dashboard-grid map-layout" style="display: flex; flex-direction: column; height: calc(100vh - 64px);">
-            <div class="map-legend" style="padding: 16px; background: white; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: center; gap: 24px; align-items: center; box-shadow: 0 1px 2px rgba(0,0,0,0.05); z-index: 10;">
-                <span style="font-weight: 500; color: #475569;" data-i18n="map.legendTitle">État des Rivières :</span>
-                <span class="legend-item"><span class="dot green"></span> <span data-i18n="legend.safe">Sécuritaire</span></span>
-                <span class="legend-item"><span class="dot yellow"></span> <span data-i18n="legend.monitor">Surveiller</span></span>
-                <span class="legend-item"><span class="dot red"></span> <span data-i18n="legend.critical">Critique</span></span>
-                <span class="legend-item"><span class="dot gray" style="background: #94a3b8; border-color: #64748b;"></span> <span data-i18n="legend.nodata">Aucune donnée / Hors Zone</span></span>
-            </div>
-            <div id="map" style="flex: 1; width: 100%; background: #0f172a;"></div>
+        <main class="map-layout">
+            <!-- Sidebar: Monitored Rivers List -->
+            <aside class="sidebar glass-panel" id="mapSidebar">
+                <div class="section-title" data-i18n="map.sidebar.title">Rivières Surveillées</div>
+                <div class="river-status-list" id="riverStatusList">
+                    <!-- Dynamically populated by map.js -->
+                </div>
+            </aside>
+
+            <!-- Map View Area -->
+            <section class="map-section">
+                <div class="map-legend">
+                    <span style="font-weight: 500;" data-i18n="map.legendTitle">État des Rivières :</span>
+                    <span class="legend-item"><span class="dot green"></span> <span data-i18n="legend.safe">Sécuritaire</span></span>
+                    <span class="legend-item"><span class="dot yellow"></span> <span data-i18n="legend.monitor">Surveiller</span></span>
+                    <span class="legend-item"><span class="dot red"></span> <span data-i18n="legend.critical">Critique</span></span>
+                    <span class="legend-item"><span class="dot gray"></span> <span data-i18n="legend.nodata">Hors de la zone</span></span>
+                </div>
+                <div id="map"></div>
+            </section>
         </main>
     </div>
 

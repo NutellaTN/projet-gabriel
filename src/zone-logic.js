@@ -1,9 +1,21 @@
 import { riverConfigs } from './river-data.js';
 
+function isPointOnSegment(p, p1, p2) {
+    const x = p[0], y = p[1];
+    const x1 = p1[0], y1 = p1[1];
+    const x2 = p2[0], y2 = p2[1];
+    const minX = Math.min(x1, x2), maxX = Math.max(x1, x2);
+    const minY = Math.min(y1, y2), maxY = Math.max(y1, y2);
+    if (x < minX || x > maxX || y < minY || y > maxY) return false;
+    const crossProduct = (y - y1) * (x2 - x1) - (x - x1) * (y2 - y1);
+    return Math.abs(crossProduct) < 1e-5;
+}
+
 function pointInPolygon(point, vs) {
     const x = point[0], y = point[1];
     let inside = false;
     for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
+        if (isPointOnSegment(point, vs[i], vs[j])) return true;
         const xi = vs[i][0], yi = vs[i][1];
         const xj = vs[j][0], yj = vs[j][1];
         const intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
@@ -53,14 +65,15 @@ export function getRiverZone(riverKey, pt) {
     const zones = pt.phase === "DJGC" ? cfg.djgcZones : cfg.djdcZones;
     if (!zones) return null;
 
-    const targetPoint = [pt.dj, pt.q];
+    // Use logarithmic scale for Q to match visual D3 chart scaling
+    const targetPoint = [pt.dj, pt.q > 0 ? Math.log(pt.q) : -100];
 
     const checkPoly = (polyArray) => {
         if (!polyArray || polyArray.length === 0) return false;
         const arr = Array.isArray(polyArray[0]) ? polyArray : [polyArray];
         for (const poly of arr) {
             if (poly && poly.length > 0) {
-                const vs = poly.map(p => [p.dj, p.q]);
+                const vs = poly.map(p => [p.dj, p.q > 0 ? Math.log(p.q) : -100]);
                 if (pointInPolygon(targetPoint, vs)) return true;
             }
         }
@@ -87,10 +100,13 @@ export function getRiverZone(riverKey, pt) {
     const qBottom = cfg.qMin || 0;
     const qTop = cfg.qMax || 10000;
 
-    // Check green
+    // Collect legacy polygons
+    const redPolys = [];
+    const yellowPolys = [];
+    const greenPolys = [];
+
     if (segmentsGY.length > 0 && segmentsGY[0]) {
-        const greenPoly = buildPolygonBelow(segmentsGY[0], qBottom);
-        if (greenPoly.length > 0 && pointInPolygon(targetPoint, greenPoly.map(p => [p.dj, p.q]))) return "green";
+        greenPolys.push(buildPolygonBelow(segmentsGY[0], qBottom));
     }
 
     for (let i = 0; i < maxSegments; i++) {
@@ -98,21 +114,30 @@ export function getRiverZone(riverKey, pt) {
         const yr = segmentsYR[i];
 
         if (gy && yr) {
-            const yellowPoly = buildPolygonBetween(gy, yr);
-            if (yellowPoly.length > 0 && pointInPolygon(targetPoint, yellowPoly.map(p => [p.dj, p.q]))) return "yellow";
+            yellowPolys.push(buildPolygonBetween(gy, yr));
         }
 
         if (yr) {
             const nextGy = segmentsGY[i + 1];
             if (nextGy) {
-                const redPoly = buildPolygonBetween(yr, nextGy);
-                if (redPoly.length > 0 && pointInPolygon(targetPoint, redPoly.map(p => [p.dj, p.q]))) return "red";
+                redPolys.push(buildPolygonBetween(yr, nextGy));
             } else {
-                const redPoly = buildPolygonAbove(yr, qTop);
-                if (redPoly.length > 0 && pointInPolygon(targetPoint, redPoly.map(p => [p.dj, p.q]))) return "red";
+                redPolys.push(buildPolygonAbove(yr, qTop));
             }
         }
     }
 
+    // Check polygons in priority order: Red -> Yellow -> Green
+    for (const poly of redPolys) {
+        if (poly.length > 0 && pointInPolygon(targetPoint, poly.map(p => [p.dj, p.q > 0 ? Math.log(p.q) : -100]))) return "red";
+    }
+    for (const poly of yellowPolys) {
+        if (poly.length > 0 && pointInPolygon(targetPoint, poly.map(p => [p.dj, p.q > 0 ? Math.log(p.q) : -100]))) return "yellow";
+    }
+    for (const poly of greenPolys) {
+        if (poly.length > 0 && pointInPolygon(targetPoint, poly.map(p => [p.dj, p.q > 0 ? Math.log(p.q) : -100]))) return "green";
+    }
+
     return null;
 }
+

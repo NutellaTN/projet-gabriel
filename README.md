@@ -16,7 +16,7 @@ This project is a real-time monitoring tool for river ice breakup, visualizing t
 - **`scripts/`**: Backend Python scripts for data fetching and processing.
     - **`poll_daily.py`**: The core data pipeline. Fetches weather data (MSC climate-daily) and discharge data (CEHQ), calculates the DJGC thermal index, and updates Firestore with the `djgc_q_points` array.
 - **`.github/workflows/`**: CI/CD automation.
-    - **`poll_daily.yml`**: GitHub Action that runs `poll_daily.py` every day at 16:00 UTC to keep the data fresh.
+    - **`poll_daily.yml`**: GitHub Action that runs `poll_daily.py` every day at 12:00 UTC (8:00 AM Eastern Time) to keep the data fresh.
 
 ## Algorithms
 

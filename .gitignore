@@ -76,6 +76,7 @@ GeoMet-OGC-RIL/
 
 # Scripts
 scripts/inject_historic.py
+scripts/test_raycast.py
 
 # Documentation
 RIVER_DATA_GUIDE.md

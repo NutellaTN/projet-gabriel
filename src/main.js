@@ -311,4 +311,15 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
+    // Dynamic window resize handling to redraw the chart fluidly
+    let resizeTimeout;
+    window.addEventListener("resize", () => {
+        clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(() => {
+            if (currentSeries) {
+                drawDiagram(selectedPoint, showControlPoints, onPointSelect, currentSeries);
+            }
+        }, 200);
+    });
+
 });
