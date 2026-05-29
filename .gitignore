@@ -80,3 +80,6 @@ scripts/test_raycast.py
 
 # Documentation
 RIVER_DATA_GUIDE.md
+
+# Exports
+exports/
