@@ -13,6 +13,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const map = L.map('map').setView([47.5, -71.5], 6);
 
+    // Create a custom pane for station markers so they are always on top of watersheds and rivers
+    map.createPane('stationPane');
+    map.getPane('stationPane').style.zIndex = '450';
+
     // CartoDB Voyager Tiles (Light Mode)
     L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
@@ -49,15 +53,29 @@ document.addEventListener("DOMContentLoaded", () => {
                 data.features.sort((a, b) => getBBoxArea(b) - getBBoxArea(a));
             }
 
-            L.geoJSON(data, {
+            const getWatershedWeight = (zoom) => {
+                if (zoom <= 5) return 0.5;
+                if (zoom === 6) return 0.8;
+                if (zoom === 7) return 1.2;
+                if (zoom === 8) return 1.6;
+                return 2.0;
+            };
+
+            const watershedLayer = L.geoJSON(data, {
                 interactive: false,
                 style: {
                     color: '#000000', // solid dark black boundary
-                    weight: 2.5,
+                    weight: getWatershedWeight(map.getZoom()),
                     opacity: 0.85,
                     fillOpacity: 0.02 // highly transparent fill so nested layers are perfectly visible
                 }
             }).addTo(map);
+
+            map.on('zoomend', () => {
+                watershedLayer.setStyle({
+                    weight: getWatershedWeight(map.getZoom())
+                });
+            });
         })
         .catch(error => console.error('Error loading watersheds:', error));
 
@@ -97,7 +115,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 color: '#fff',
                 weight: 2,
                 opacity: 1,
-                fillOpacity: 0.9
+                fillOpacity: 0.9,
+                pane: 'stationPane'
             }).addTo(map);
 
             marker.on('click', () => {

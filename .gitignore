@@ -83,3 +83,9 @@ RIVER_DATA_GUIDE.md
 
 # Exports
 exports/
+
+# Historic diagrams and scripts
+historic_diagrams/
+historic_diagrams.zip
+scripts/generate_historic_diagrams.py
+
