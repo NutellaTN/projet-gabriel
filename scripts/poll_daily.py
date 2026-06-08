@@ -722,13 +722,24 @@ def main() -> None:
             sys.exit(1)
         stations = [args.station]
 
-    # Stop polling if past May 15th
+    # Stop polling if in off-season (May 16th to October 14th)
     tz = get_quebec_tz()
     today = datetime.datetime.now(tz).date()
-    end_date = datetime.date(today.year, 5, 15)
-    if today > end_date:
-        print(f"Current date {today} is past the season end date of {end_date}. Exiting without polling.")
+    off_season_start = datetime.date(today.year, 5, 16)
+    off_season_end = datetime.date(today.year, 10, 14)
+    if off_season_start <= today <= off_season_end:
+        print(f"Current date {today} is in the off-season ({off_season_start} to {off_season_end}). Exiting without polling.")
         sys.exit(0)
+
+    # Set active season dynamically based on date
+    global SEASON
+    year = today.year
+    if today.month > 10 or (today.month == 10 and today.day >= 15):
+        SEASON = f"{year}_{str(year + 1)[2:]}"
+    else:
+        SEASON = f"{year - 1}_{str(year)[2:]}"
+    print(f"Active season: {SEASON}")
+
 
     db = init_firebase()
     

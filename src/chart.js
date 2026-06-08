@@ -848,19 +848,24 @@ export function drawDiagram(selectedPoint, showControlPoints, onPointSelect, dat
         return pts;
     }
 
-    let chartData = data;
-    if (data) {
-        if (Array.isArray(data)) {
-            const phases = [...new Set(data.map(d => d.phase))];
+    const now = new Date();
+    const month = now.getMonth() + 1;
+    const day = now.getDate();
+    const isOffSeason = (month > 5 || (month === 5 && day >= 16)) && (month < 10 || (month === 10 && day < 15));
+
+    let chartData = isOffSeason ? null : data;
+    if (chartData) {
+        if (Array.isArray(chartData)) {
+            const phases = [...new Set(chartData.map(d => d.phase))];
             chartData = phases.flatMap(phase => 
-                filterLeadingZeros(data.filter(d => d.phase === phase))
+                filterLeadingZeros(chartData.filter(d => d.phase === phase))
             );
-        } else if (typeof data === 'object' && data.historical) {
-            const phases = [...new Set(data.historical.map(d => d.phase))];
+        } else if (typeof chartData === 'object' && chartData.historical) {
+            const phases = [...new Set(chartData.historical.map(d => d.phase))];
             chartData = {
-                ...data,
+                ...chartData,
                 historical: phases.flatMap(phase => 
-                    filterLeadingZeros(data.historical.filter(d => d.phase === phase))
+                    filterLeadingZeros(chartData.historical.filter(d => d.phase === phase))
                 )
             };
         }

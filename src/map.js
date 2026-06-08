@@ -189,7 +189,12 @@ document.addEventListener("DOMContentLoaded", () => {
                 const lang = getCurrentLanguage();
                 const translatedName = t(`river.${riverKey}`) || config.label;
                 
-                if (data && data.latest) {
+                const now = new Date();
+                const month = now.getMonth() + 1;
+                const day = now.getDate();
+                const isOffSeason = (month > 5 || (month === 5 && day >= 16)) && (month < 10 || (month === 10 && day < 15));
+
+                if (!isOffSeason && data && data.latest) {
                     const zone = getRiverZone(riverKey, data.latest);
                     const color = zone ? zoneColors[zone] : zoneColors.none;
                     
@@ -208,12 +213,17 @@ document.addEventListener("DOMContentLoaded", () => {
                     if (sidebarItem) sidebarItem.setAttribute("title", `Status: ${statusText} | Q: ${data.latest.q} m³/s`);
                 } else {
                     marker.setStyle({ fillColor: zoneColors.none });
-                    marker.setTooltipContent(`<b>${translatedName}</b><br>${lang === 'fr' ? 'Hors de la zone' : 'Outside of the zone'}`);
+                    
+                    const statusText = isOffSeason 
+                        ? (lang === 'fr' ? 'Aucun statut' : 'No status')
+                        : (lang === 'fr' ? 'Hors de la zone' : 'Outside of the zone');
+                    
+                    marker.setTooltipContent(`<b>${translatedName}</b><br>Status: ${statusText}`);
                     
                     // Update Sidebar
-                    if (sidebarQ) sidebarQ.textContent = t("map.sidebar.nodata");
+                    if (sidebarQ) sidebarQ.textContent = isOffSeason ? "-" : t("map.sidebar.nodata");
                     if (sidebarDot) sidebarDot.className = "dot gray";
-                    if (sidebarItem) sidebarItem.setAttribute("title", lang === 'fr' ? 'Hors de la zone' : 'Outside of the zone');
+                    if (sidebarItem) sidebarItem.setAttribute("title", `Status: ${statusText}`);
                 }
             });
         }
