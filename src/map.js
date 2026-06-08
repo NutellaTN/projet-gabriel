@@ -83,14 +83,28 @@ document.addEventListener("DOMContentLoaded", () => {
     fetch('/data/river_paths.geojson')
         .then(response => response.json())
         .then(data => {
-            L.geoJSON(data, {
+            const getRiverWeight = (zoom) => {
+                if (zoom <= 5) return 0.6;
+                if (zoom === 6) return 1.0;
+                if (zoom === 7) return 1.5;
+                if (zoom === 8) return 2.0;
+                return 2.5;
+            };
+
+            const riverLayer = L.geoJSON(data, {
                 interactive: false,
                 style: {
                     color: '#38bdf8', // Sky blue for rivers
-                    weight: 3,
+                    weight: getRiverWeight(map.getZoom()),
                     opacity: 0.8
                 }
             }).addTo(map);
+
+            map.on('zoomend', () => {
+                riverLayer.setStyle({
+                    weight: getRiverWeight(map.getZoom())
+                });
+            });
         })
         .catch(error => console.error('Error loading river paths:', error));
 

@@ -480,6 +480,8 @@ def main():
         ax2.set_xticks(djdc_ticks)
         ax2.set_yticks(major_ticks)
         ax2.get_yaxis().set_major_formatter(ticker.FuncFormatter(lambda y, _: f'{y:g}'))
+        ax2.yaxis.tick_right()
+        ax2.yaxis.set_label_position("right")
 
         ax2.set_title("DJDC-5", fontsize=13, fontweight='bold', pad=10)
         ax2.set_xlabel("DJDC -5 °C (°C·d)", fontsize=11, labelpad=8)
@@ -520,7 +522,7 @@ def main():
         )
 
         # Adjust margins with generous padding so nothing is cut off
-        plt.tight_layout(rect=[0.02, 0.08, 0.98, 0.90], h_pad=2, w_pad=4)
+        plt.tight_layout(rect=[0.02, 0.08, 0.98, 0.90], h_pad=2, w_pad=0.2)
 
         # Save files
         pdf_path = os.path.join(output_dir, f"{river_key}_diagram.pdf")
