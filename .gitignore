@@ -77,6 +77,7 @@ GeoMet-OGC-RIL/
 # Scripts
 scripts/inject_historic.py
 scripts/test_raycast.py
+scripts/chaudiere_river_analysis.py
 
 # Documentation
 RIVER_DATA_GUIDE.md
