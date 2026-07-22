@@ -5,6 +5,9 @@ import { subscribeToSeasonData } from './firestore-service.js';
 import { t, setLanguage, getCurrentLanguage, translateDOM } from './i18n.js';
 
 import './firebase-config.js'; // Initialize Firebase
+import { db, auth } from './firebase-config.js';
+import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
 
 let showControlPoints = false;
 // selectedPoint: { riverKey, panelKey: 'djgc'|'djdc', zone: 'greenYellow'|'yellowRed', index }
@@ -172,32 +175,47 @@ document.addEventListener('DOMContentLoaded', () => {
         const btn = document.getElementById("runPollBtn");
         const progressEl = document.getElementById("pollProgress");
 
-        // GitHub repo config (hard-coded — not a secret)
+        // 1. Prompt user for Passcode
+        const promptMsg = t("pipeline.prompt.passcode") || "Veuillez entrer le code d'accès administrateur :";
+        const passcode = prompt(promptMsg);
+        if (!passcode) return; // User cancelled or entered empty string
+
         const OWNER = "NutellaTN";
         const REPO = "projet-gabriel";
         const WORKFLOW = "poll_daily.yml";
 
-        // PAT must be set in a .env file as VITE_GITHUB_PAT (repo scope)
-        const token = import.meta.env.VITE_GITHUB_PAT;
-        if (!token) {
-            statusEl.style.color = "#f87171";
-            statusEl.textContent = t("pipeline.status.notoken");
-            return;
-        }
-
         btn.disabled = true;
         progressEl.style.display = "block";
         statusEl.style.color = "#94a3b8";
-        statusEl.textContent = t("pipeline.status.pending");
-
-        const headers = {
-            Authorization: `Bearer ${token}`,
-            Accept: "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-        };
+        statusEl.textContent = t("pipeline.status.authenticating") || "Vérification du code d'accès…";
 
         try {
-            // 1. Dispatch the workflow
+            // 2. Authenticate with Firebase Auth using passcode
+            try {
+                await signInWithEmailAndPassword(auth, "admin@projet-gabriel.local", passcode);
+            } catch (authErr) {
+                statusEl.style.color = "#f87171";
+                statusEl.textContent = t("pipeline.status.invalidcode") || "✗ Code d'accès incorrect.";
+                return;
+            }
+
+            // 3. Fetch secret PAT from Firestore (only allowed when authenticated)
+            statusEl.textContent = t("pipeline.status.pending");
+            const secretSnap = await getDoc(doc(db, "secrets", "github"));
+            if (!secretSnap.exists() || !secretSnap.data()?.token) {
+                statusEl.style.color = "#f87171";
+                statusEl.textContent = t("pipeline.status.notoken");
+                return;
+            }
+            const token = secretSnap.data().token;
+
+            const headers = {
+                Authorization: `Bearer ${token}`,
+                Accept: "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            };
+
+            // 4. Dispatch the workflow
             const dispatchRes = await fetch(
                 `https://api.github.com/repos/${OWNER}/${REPO}/actions/workflows/${WORKFLOW}/dispatches`,
                 { method: "POST", headers, body: JSON.stringify({ ref: "main" }) }
@@ -209,10 +227,9 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             statusEl.textContent = t("pipeline.status.starting");
-            // Wait 2 seconds for GitHub to register the run
             await new Promise((r) => setTimeout(r, 2000));
 
-            // 2. Find the newly created run
+            // 5. Find run & poll until completed
             const runsRes = await fetch(
                 `https://api.github.com/repos/${OWNER}/${REPO}/actions/workflows/${WORKFLOW}/runs?per_page=1`,
                 { headers }
@@ -228,10 +245,9 @@ document.addEventListener('DOMContentLoaded', () => {
             let status = run.status;
             let conclusion = run.conclusion;
 
-            // 3. Poll until completed
             while (status !== "completed") {
                 statusEl.textContent = t("pipeline.status.running", { status: status.replace("_", " ") });
-                await new Promise((r) => setTimeout(r, 5000)); // Poll every 5s
+                await new Promise((r) => setTimeout(r, 5000));
 
                 const pollRes = await fetch(
                     `https://api.github.com/repos/${OWNER}/${REPO}/actions/runs/${runId}`,
@@ -242,7 +258,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 conclusion = pollData.conclusion;
             }
 
-            // 4. Job finished
             if (conclusion === "success") {
                 statusEl.style.color = "#4ade80";
                 statusEl.textContent = t("pipeline.status.success");
@@ -255,6 +270,8 @@ document.addEventListener('DOMContentLoaded', () => {
             statusEl.style.color = "#f87171";
             statusEl.textContent = t("pipeline.status.error", { message: err.message });
         } finally {
+            // Sign out immediately so session is closed
+            await signOut(auth).catch(() => {});
             btn.disabled = false;
             progressEl.style.display = "none";
         }

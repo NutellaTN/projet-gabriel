@@ -23,13 +23,16 @@ export const translations = {
 
         // Pipeline Section
         "pipeline.startBtn": "▶ Lancer la collecte",
+        "pipeline.prompt.passcode": "Veuillez entrer le code d'accès administrateur :",
+        "pipeline.status.authenticating": "Vérification du code d'accès…",
+        "pipeline.status.invalidcode": "✗ Code d'accès incorrect.",
         "pipeline.status.pending": "Envoi en cours…",
         "pipeline.status.starting": "Démarrage (recherche de la tâche)…",
         "pipeline.status.running": "Statut : {status}…",
         "pipeline.status.success": "✓ Collecte terminée avec succès !",
         "pipeline.status.failure": "✗ Échec de la collecte ({conclusion})",
         "pipeline.status.error": "✗ Erreur : {message}",
-        "pipeline.status.notoken": "⚠ VITE_GITHUB_PAT not set in .env",
+        "pipeline.status.notoken": "⚠ Clé GitHub non trouvée dans Firestore",
 
         // Redraw Button
         "btn.redraw": "↻ Redessiner le graphique",
@@ -109,13 +112,16 @@ export const translations = {
 
         // Pipeline Section
         "pipeline.startBtn": "▶ Run Data Collection",
+        "pipeline.prompt.passcode": "Please enter the admin passcode:",
+        "pipeline.status.authenticating": "Verifying passcode…",
+        "pipeline.status.invalidcode": "✗ Incorrect passcode.",
         "pipeline.status.pending": "Sending request…",
         "pipeline.status.starting": "Starting (locating task)…",
         "pipeline.status.running": "Status: {status}…",
         "pipeline.status.success": "✓ Collection completed successfully!",
         "pipeline.status.failure": "✗ Collection failed ({conclusion})",
         "pipeline.status.error": "✗ Error: {message}",
-        "pipeline.status.notoken": "⚠ VITE_GITHUB_PAT not set in .env",
+        "pipeline.status.notoken": "⚠ GitHub key not found in Firestore",
 
         // Redraw Button
         "btn.redraw": "↻ Redraw Chart",
