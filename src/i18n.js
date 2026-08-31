@@ -63,7 +63,7 @@ export const translations = {
         "chart.lastUpdated": "Dernière mise à jour : {time}",
         "chart.timeFormat": "{date} à {time}",
         "legend.safe": "Sécuritaire",
-        "legend.monitor": "Surveiller",
+        "legend.monitor": "À surveiller",
         "legend.critical": "Critique",
         "legend.observed": "Observées",
         "legend.nodata": "Hors de la zone",

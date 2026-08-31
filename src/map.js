@@ -202,7 +202,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     
                     let statusText = lang === 'fr' ? 'Hors de la zone' : 'Outside of the zone';
                     if (zone === 'green') statusText = lang === 'fr' ? 'Sécuritaire' : 'Safe';
-                    if (zone === 'yellow') statusText = lang === 'fr' ? 'Surveiller' : 'Monitor';
+                    if (zone === 'yellow') statusText = lang === 'fr' ? 'À surveiller' : 'Monitor';
                     if (zone === 'red') statusText = lang === 'fr' ? 'Critique' : 'Critical';
                     
                     marker.setTooltipContent(`<b>${translatedName}</b><br>Status: ${statusText}<br>Q: ${data.latest.q} m³/s`);
