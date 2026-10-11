@@ -45,7 +45,6 @@ except ImportError:
 # CONSTANTS
 # ═══════════════════════════════════════════════════════════════════════════════
 FIREBASE_SA_ENV_VAR = "FIREBASE_SA_JSON_B64"
-SEASON              = "2025_26"
 
 RIVERS = {
     "lassomption": {"cehq": "052219", "climate_id": "7014160", "lat": 45.81, "lon": -73.43},
@@ -580,13 +579,80 @@ def parse_highcharts_q() -> Tuple[Dict[str, float], Dict[str, Dict[str, float]]]
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# DJDC-5 COMPUTATION
+# SEASON
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def compute_djdc_array(mean_by_date: Dict[str, float]) -> Dict[str, float]:
+def get_season(today: datetime.date, djdc_start: Optional[str] = None) -> Dict[str, str]:
+    """
+    Season containing `today`. A season starts Oct 15 and its ID is YYYY_YY of the
+    start year. DJGC runs from Oct 15 to the DJDC-5 start (Feb 15 unless overridden),
+    DJDC-5 from that day to May 15. The changeover day belongs to both phases.
+    All dates are YYYY-MM-DD strings, matching the keys used everywhere else.
+    """
+    start_year = today.year if (today.month, today.day) >= (10, 15) else today.year - 1
+    djdc_start = djdc_start or f"{start_year + 1}-02-15"
+    return {
+        "id":         f"{start_year}_{str(start_year + 1)[2:]}",
+        "djgc_start": f"{start_year}-10-15",
+        "djgc_end":   djdc_start,
+        "djdc_start": djdc_start,
+        "end":        f"{start_year + 1}-05-15",
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DJGC / DJDC-5 COMPUTATION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def fill_temp_gaps(mean_by_date: Dict[str, Optional[float]], start: str, end: str) -> Dict[str, float]:
+    """
+    Daily means for every date in [start, end]. A missing day repeats the previous
+    day's mean (leading gaps take the first available one), the same rule as
+    inject_historic.py, so a gap doesn't silently add zero to the cumulative index.
+    """
+    known = {d: t for d, t in mean_by_date.items() if t is not None and start <= d <= end}
+    if not known:
+        return {}
+    out: Dict[str, float] = {}
+    last_t = known[min(known)]
+    filled = []
+    day = datetime.datetime.strptime(start, "%Y-%m-%d").date()
+    end_day = datetime.datetime.strptime(end, "%Y-%m-%d").date()
+    while day <= end_day:
+        ds = day.strftime("%Y-%m-%d")
+        if ds in known:
+            last_t = known[ds]
+        else:
+            filled.append(ds)
+        out[ds] = last_t
+        day += timedelta(days=1)
+    if filled:
+        print(f"[warning] climate-daily has no mean temperature for {len(filled)} day(s), "
+              f"carried forward: {', '.join(filled)}")
+    return out
+
+
+def compute_djgc_array(mean_by_date: Dict[str, float], start: str, end: str) -> Dict[str, float]:
+    djgc = 0.0
+    out: Dict[str, float] = {}
+    for ds in sorted(mean_by_date.keys()):
+        if not start <= ds <= end:
+            continue
+        t = mean_by_date[ds]
+        if t < 0:
+            djgc += abs(t)
+        elif t > 0:
+            djgc = max(0.0, djgc - t)
+        out[ds] = round(djgc, 3)
+    return out
+
+
+def compute_djdc_array(mean_by_date: Dict[str, float], start: str, end: str) -> Dict[str, float]:
     djdc = 0.0
     out: Dict[str, float] = {}
     for ds in sorted(mean_by_date.keys()):
+        if not start <= ds <= end:
+            continue
         t = mean_by_date[ds]
         delta = t + 5.0
         if delta > 0:
@@ -601,7 +667,18 @@ def compute_djdc_array(mean_by_date: Dict[str, float]) -> Dict[str, float]:
 # MAIN
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def process_station(db: firestore.Client, station_key: str, start_date: str, dry_run: bool) -> None:
+def merge_points(existing: List[Dict[str, Any]], obs_q: Dict[str, float],
+                 series: Dict[str, float], dj_key: str) -> List[Dict[str, Any]]:
+    """Merge observed (dj, q) points into a stored points array by date; fresh values win."""
+    merged = {pt["date"]: pt for pt in existing if pt.get("date")}
+    for d, q in obs_q.items():
+        if d in series:
+            merged[d] = {"date": d, dj_key: series[d], "q": q}
+    return [merged[d] for d in sorted(merged.keys())]
+
+
+def process_station(db: firestore.Client, station_key: str, season: Dict[str, str],
+                    today: datetime.date, dry_run: bool) -> None:
     global STATION_KEY, CEHQ_STATION, LAT, LON, CLIMATE_ID
     cfg = RIVERS[station_key]
     STATION_KEY = station_key
@@ -610,25 +687,25 @@ def process_station(db: firestore.Client, station_key: str, start_date: str, dry
     LON = cfg["lon"]
     CLIMATE_ID = cfg["climate_id"]
 
-    # 1. Historical Temp
-    yesterday = (datetime.datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
-    print(f"Fetching climate-daily from {start_date} to {yesterday} for {STATION_KEY}...")
-    hist_temp = fetch_climate_daily(CLIMATE_ID, start_date, yesterday)
+    # 1. Historical Temp (whole season so far; nothing yet on its first day)
+    yesterday = (today - timedelta(days=1)).strftime("%Y-%m-%d")
+    hist_temp: Dict[str, Optional[float]] = {}
+    if yesterday >= season["djgc_start"]:
+        print(f"Fetching climate-daily from {season['djgc_start']} to {yesterday} for {STATION_KEY}...")
+        hist_temp = fetch_climate_daily(CLIMATE_ID, season["djgc_start"], yesterday)
 
     # 2. Future Temp (forecast)
     future_temp = get_realtime_and_forecast_temps()
 
-    # 3. Merge Temp
-    all_temp: Dict[str, float] = {}
-    for d, t in hist_temp.items():
-        if t is not None:
-            all_temp[d] = t
+    # 3. Merge Temp (gap-filled history first, forecast only for dates it doesn't cover)
+    all_temp = fill_temp_gaps(hist_temp, season["djgc_start"], yesterday)
     for d, t in future_temp.items():
         if d not in all_temp:
             all_temp[d] = t
 
-    # 4. Generate DJDC-5 series
-    djdc_series = compute_djdc_array(all_temp)
+    # 4. Generate DJGC and DJDC-5 series, each restricted to its phase window
+    djgc_series = compute_djgc_array(all_temp, season["djgc_start"], season["djgc_end"])
+    djdc_series = compute_djdc_array(all_temp, season["djdc_start"], season["end"])
 
     # 5. Fetch Realtime & Prediction Q
     obs_q, pred_q = parse_highcharts_q()
@@ -638,58 +715,48 @@ def process_station(db: firestore.Client, station_key: str, start_date: str, dry
         db.collection("stations")
         .document(STATION_KEY)
         .collection("seasons")
-        .document(SEASON)
+        .document(season["id"])
     )
 
     doc_snap = doc_ref.get()
     doc_data = doc_snap.to_dict() if doc_snap.exists else {}
 
-    existing_points = doc_data.get("djdc_q_points", [])
-    merged_points: Dict[str, Any] = {}
+    # Observed dates are routed by phase window, so a run around Feb 15 fills both
+    # arrays and missed days are backfilled while CEHQ still shows them.
+    djgc_points = merge_points(doc_data.get("djgc_q_points", []), obs_q, djgc_series, "djgc")
+    djdc_points = merge_points(doc_data.get("djdc_q_points", []), obs_q, djdc_series, "djdc")
 
-    base_date = datetime.datetime.strptime(start_date, "%Y-%m-%d")
-    for pt in existing_points:
-        d_str = pt.get("date")
-        if not d_str:
-            d_str = base_date.strftime("%Y-%m-%d")
-            base_date += timedelta(days=1)
-        pt["date"] = d_str
-        merged_points[d_str] = pt
-
-    sorted_obs_dates = sorted(obs_q.keys())
-    for d in sorted_obs_dates:
-        if d in djdc_series:
-            merged_points[d] = {"date": d, "djdc": djdc_series[d], "q": obs_q[d]}
-
-    final_points = [merged_points[d] for d in sorted(merged_points.keys())]
-
-    latest_date = sorted_obs_dates[-1] if sorted_obs_dates else None
+    # Most recent observed date with a thermal index; DJDC-5 wins on the changeover day
     latest_obj = doc_data.get("latest")
-    if latest_date and latest_date in djdc_series:
-        latest_obj = {
-            "date":  latest_date,
-            "dj":    djdc_series[latest_date],
-            "q":     obs_q[latest_date],
-            "phase": "DJDC5",
-        }
+    for d in sorted(obs_q.keys(), reverse=True):
+        if d in djdc_series:
+            latest_obj = {"date": d, "dj": djdc_series[d], "q": obs_q[d], "phase": "DJDC5"}
+            break
+        if d in djgc_series:
+            latest_obj = {"date": d, "dj": djgc_series[d], "q": obs_q[d], "phase": "DJGC"}
+            break
 
+    # Predictions stay in today's phase (the chart draws them on a single panel)
+    phase = "DJDC5" if today.strftime("%Y-%m-%d") >= season["djdc_start"] else "DJGC"
+    phase_series = djdc_series if phase == "DJDC5" else djgc_series
     pred_values: Dict[str, Any] = {}
     for d, q_info in pred_q.items():
         if d in obs_q:
             continue
-        if d in djdc_series:
+        if d in phase_series:
             pred_values[d] = {
-                "dj":  djdc_series[d],
+                "dj":  phase_series[d],
                 "q":   q_info["q"],
                 "p25": q_info["p25"],
                 "p75": q_info["p75"],
             }
 
-    prediction_obj = {"phase": "DJDC5", "values": pred_values}
+    prediction_obj = {"phase": phase, "values": pred_values}
 
-    print(f"\n=== Firestore target ===")
+    print(f"\n=== Firestore target: stations/{STATION_KEY}/seasons/{season['id']} ===")
+    print(f"DJGC points:  {len(djgc_points)} | DJDC-5 points: {len(djdc_points)}")
     print(f"Latest Point: {latest_obj}")
-    print(f"Predictions:  {len(pred_values)} future points")
+    print(f"Predictions:  {len(pred_values)} future points ({phase})")
 
     if dry_run:
         print("Dry-run enabled: not writing anything.")
@@ -698,11 +765,13 @@ def process_station(db: firestore.Client, station_key: str, start_date: str, dry
     tz = get_quebec_tz()
     last_updated_str = datetime.datetime.now(tz).strftime("%d/%m/%Y %H:%M:%S")
 
-    # 1. Set historical/latest data (merges with existing)
-    doc_ref.set(
-        {"djdc_q_points": final_points, "latest": latest_obj, "last_updated": last_updated_str},
-        merge=True,
-    )
+    # 1. Set historical/latest data (merges with existing; creates the season doc if needed)
+    update: Dict[str, Any] = {"latest": latest_obj, "last_updated": last_updated_str}
+    if djgc_points:
+        update["djgc_q_points"] = djgc_points
+    if djdc_points:
+        update["djdc_q_points"] = djdc_points
+    doc_ref.set(update, merge=True)
     # 2. Fully overwrite the prediction object to wipe out old prediction dates
     doc_ref.update({"prediction": prediction_obj})
     print("Updates committed. Done.")
@@ -710,7 +779,8 @@ def process_station(db: firestore.Client, station_key: str, start_date: str, dry
 def main() -> None:
     parser = argparse.ArgumentParser(description="Poll daily data and push to Firestore.")
     parser.add_argument("--station", default="lassomption", help="Station key or 'all'")
-    parser.add_argument("--start", default="2026-02-15", help="Start date for DJDC-5 accumulation (YYYY-MM-DD)")
+    parser.add_argument("--start", default=None,
+                        help="Override the DJDC-5 start date (YYYY-MM-DD); defaults to Feb 15 of the active season")
     parser.add_argument("--dry-run", action="store_true", help="Do not write to Firestore")
     args = parser.parse_args()
 
@@ -732,14 +802,10 @@ def main() -> None:
         sys.exit(0)
 
     # Set active season dynamically based on date
-    global SEASON
-    year = today.year
-    if today.month > 10 or (today.month == 10 and today.day >= 15):
-        SEASON = f"{year}_{str(year + 1)[2:]}"
-    else:
-        SEASON = f"{year - 1}_{str(year)[2:]}"
-    print(f"Active season: {SEASON}")
-
+    season = get_season(today, args.start)
+    print(f"Active season: {season['id']} "
+          f"(DJGC {season['djgc_start']} to {season['djgc_end']}, "
+          f"DJDC-5 {season['djdc_start']} to {season['end']})")
 
     db = init_firebase()
     
@@ -750,7 +816,7 @@ def main() -> None:
             print(f"\n======================================")
             print(f"Polling station: {st}")
             print(f"======================================")
-            process_station(db, st, args.start, args.dry_run)
+            process_station(db, st, season, today, args.dry_run)
         except Exception as e:
             print(f"Error processing station {st}: {e}")
             errors.append(st)
