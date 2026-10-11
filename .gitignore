@@ -90,3 +90,6 @@ historic_diagrams/
 historic_diagrams.zip
 scripts/generate_historic_diagrams.py
 
+
+# Claude Code
+CLAUDE.md
